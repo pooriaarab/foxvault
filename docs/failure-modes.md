@@ -104,9 +104,9 @@ each call. The E2E test checks F1, F4, and F6 in a real Firefox.
 
 ## Demo in Firefox (E)
 
-The test starts two local echo servers and maps two host names to them with
-the Firefox preference `network.dns.localDomains`: `api.allowed.test` (A) and
-`other.test` (B). The echo servers log a SHA-256 hash of each
+The test starts two local echo servers on two host names: `api.localhost` (A)
+and `other.localhost` (B). Firefox sends each `*.localhost` name to the
+loopback address. The echo servers log a SHA-256 hash of each
 `Authorization` header that arrives. They never return the header itself.
 
 | # | Failure mode | Wanted behaviour | Test |

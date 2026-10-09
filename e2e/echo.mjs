@@ -19,7 +19,8 @@ export async function startEcho(port = 0) {
     const auth = req.headers.authorization;
     const sha256 = auth ? createHash("sha256").update(auth).digest("hex") : null;
     log.push({ id: url.searchParams.get("id"), path: url.pathname, host: req.headers.host, sha256 });
-    const cors = { "access-control-allow-origin": "*" };
+    // allow-headers lets a page preflight pass, so the demo also runs on a plain http preview page.
+    const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization" };
     if (url.pathname === "/echo") {
       const body = { host: req.headers.host, received: Boolean(auth), sha256: sha256?.slice(0, 16) ?? null, length: auth?.length ?? 0 };
       res.writeHead(200, { ...cors, "content-type": "application/json" }).end(JSON.stringify(body));

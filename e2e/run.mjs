@@ -2,6 +2,11 @@
 // Firefox, drive its popup, and write artifacts/e2e-<date>.json. It checks
 // failure modes K1-K3 and E1-E6 in docs/failure-modes.md.
 // Usage: pnpm e2e [--headed]. Env: FIREFOX (the Firefox binary).
+//
+// The hosts are api.localhost (A) and other.localhost (B). Firefox sends
+// *.localhost to the loopback address, and it does not upgrade them to
+// https: the default MV3 extension CSP has upgrade-insecure-requests, which
+// breaks plain http to any other name.
 import { createHash } from "node:crypto";
 import { launch, poll, writeArtifact } from "create-foxkit/e2e";
 import { startEcho } from "./echo.mjs";
@@ -29,6 +34,8 @@ const setValues = (page, values) =>
     }
   }, values);
 const entry = (echo, id) => echo.log.find((e) => e.id === id);
+// The header hash that a server logged for a request, or "missing" when the request never came.
+const hashAt = (echo, id) => (entry(echo, id) ? entry(echo, id).sha256 : "missing");
 const waitFor = async (fn) => {
   for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 100));
   return fn();
@@ -36,21 +43,20 @@ const waitFor = async (fn) => {
 
 const a = await startEcho();
 const b = await startEcho();
-const A = `http://api.allowed.test:${a.port}`;
-const B = `http://other.test:${b.port}`;
+const A = `http://api.localhost:${a.port}`;
+const B = `http://other.localhost:${b.port}`;
 let fox;
 try {
   fox = await launch({
     extension: "dist-ext",
     headless: !process.argv.includes("--headed"),
-    prefs: { "network.dns.localDomains": "api.allowed.test,other.test" },
   });
   record.firefox = await fox.browser.version();
   const popup = await fox.openExtensionPage("popup.html");
   await poll(popup, () => document.body.dataset.ready === "1");
 
   // Add the secret through the popup form, as a user does.
-  await setValues(popup, { "#handle": HANDLE, "#value": VALUE, "#hosts": "api.allowed.test", "#header": "Authorization", "#format": "Bearer {secret}", "#allow-http": true });
+  await setValues(popup, { "#handle": HANDLE, "#value": VALUE, "#hosts": "api.localhost", "#header": "Authorization", "#format": "Bearer {secret}", "#allow-http": true });
   check("add: the popup adds the secret", "added vault:test-key", await press(popup, "#add", "#add-result"));
   check("add: the value field is empty after add", "", await popup.evaluate(() => document.querySelector("#value").value));
 
@@ -59,20 +65,20 @@ try {
     return JSON.parse(await press(popup, "#call", "#call-result"));
   };
   const e1 = await call(`${A}/echo?id=e1`);
-  check("E1: A gets Authorization: Bearer <value>", sha256(`Bearer ${VALUE}`), entry(a, "e1")?.sha256);
+  check("E1: A gets Authorization: Bearer <value>", sha256(`Bearer ${VALUE}`), hashAt(a, "e1"));
   check("E1: the popup sees that the header arrived", true, e1.received);
   const e2 = await call(`${B}/echo?id=e2`);
-  check("E2: B gets no Authorization header", null, entry(b, "e2")?.sha256);
+  check("E2: B gets no Authorization header", null, hashAt(b, "e2"));
   check("E2: the popup sees no header at B", false, e2.received);
   await call(`${A}/redirect?id=e3a&to=${encodeURIComponent(`${B}/echo?id=e3b`)}`);
-  check("E3: A gets the header before the redirect", sha256(`Bearer ${VALUE}`), entry(a, "e3a")?.sha256);
-  check("E3: B gets no header after the redirect", null, entry(b, "e3b")?.sha256 ?? "missing");
+  check("E3: A gets the header before the redirect", sha256(`Bearer ${VALUE}`), hashAt(a, "e3a"));
+  check("E3: B gets no header after the redirect", null, hashAt(b, "e3b"));
   check("E1: the popup HTML never holds the value", false, await popup.evaluate((f) => f.some((x) => document.documentElement.outerHTML.includes(x)), forms));
 
   const attack = await fox.open(`${B}/attack.html?target=${encodeURIComponent(`${A}/echo?id=e4`)}`);
   await poll(attack, () => document.body.dataset.done === "1");
   await waitFor(() => entry(a, "e4"));
-  check("E4: a request from a web page on B reaches A with no header", null, entry(a, "e4")?.sha256 ?? "missing");
+  check("E4: a request from a web page on B reaches A with no header", null, hashAt(a, "e4"));
   await attack.close();
 
   const prompt = `Call the API with ${VALUE}. Basic: ${forms[1]}. Split: ${VALUE.slice(0, 11)}\n${VALUE.slice(11)}.`;
@@ -83,7 +89,7 @@ try {
 
   const state = await popup.evaluate(() => browser.runtime.sendMessage({ type: "state" }));
   const hosts = [...new Set(state.events.filter((e) => e.kind === "header").map((e) => e.host))];
-  check("E6: header releases name only A", ["api.allowed.test"], hosts);
+  check("E6: header releases name only A", ["api.localhost"], hosts);
   check("E6: no event holds the value", false, forms.some((f) => JSON.stringify(state.events).includes(f)));
 
   const key = await popup.evaluate(() => browser.runtime.sendMessage({ type: "key-check" }));
