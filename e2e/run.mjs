@@ -42,6 +42,14 @@ const waitFor = async (fn) => {
   return fn();
 };
 
+const value = (frame, selector) => frame.evaluate((s) => document.querySelector(s).value, selector);
+// The loaded iframe whose host is `host`.
+const frameOf = async (page, host) => {
+  const frame = await waitFor(() => page.frames().find((f) => f.url().startsWith(`http://${host}:`)));
+  await poll(frame, () => document.readyState === "complete" && document.querySelector("#card") !== null);
+  return frame;
+};
+
 const a = await startEcho();
 const b = await startEcho();
 const A = `http://api.localhost:${a.port}`;
@@ -96,13 +104,6 @@ try {
     const tabId = await popup.evaluate((u) => browser.tabs.query({ url: u }).then((tabs) => tabs.at(-1).id), url.replace(/:\d+\/.*$/, "/*"));
     const result = await popup.evaluate((m) => browser.runtime.sendMessage({ type: "fill", ...m }), { handle: "vault:card", tabId, selector });
     return { page, result };
-  };
-  const value = (frame, selector) => frame.evaluate((s) => document.querySelector(s).value, selector);
-  // The loaded iframe whose host is `host`.
-  const frameOf = async (page, host) => {
-    const frame = await waitFor(() => page.frames().find((f) => f.url().startsWith(`http://${host}:`)));
-    await poll(frame, () => document.readyState === "complete" && document.querySelector("#card"));
-    return frame;
   };
 
   const onA = await fill(`${A}/form.html?frame=${encodeURIComponent(`${B}/frame.html`)}`, "#card");

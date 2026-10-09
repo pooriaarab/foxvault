@@ -54,6 +54,13 @@ $("call").addEventListener("click", async () => {
   answer($("call-result"), text);
 });
 
+$("fill").addEventListener("click", async () => {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const result = await send("fill", { handle: $("fill-handle").value, tabId: tab?.id ?? -1, selector: $("selector").value });
+  await render();
+  answer($("fill-result"), result.error ? shown(result) : result.reason ? `refused: ${result.reason}` : result.status);
+});
+
 $("redact").addEventListener("click", async () => {
   const result = await send("redact", { text: $("prompt").value });
   answer($("redacted"), shown(result));

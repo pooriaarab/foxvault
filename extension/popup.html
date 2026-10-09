@@ -26,6 +26,13 @@
       <pre id="call-result"></pre>
     </section>
     <section>
+      <h2>Fill the active tab</h2>
+      <p>foxgate checks the fill. The host must be in the secret's allowed hosts.</p>
+      <label>Handle <input id="fill-handle" value="vault:test-key" /></label>
+      <label>Field selector <input id="selector" value="#card" /></label>
+      <button id="fill">Fill</button> <output id="fill-result"></output>
+    </section>
+    <section>
       <h2>Redact playground</h2>
       <textarea id="prompt" rows="3" placeholder="Paste a prompt that holds a secret"></textarea>
       <button id="redact">Redact</button>
