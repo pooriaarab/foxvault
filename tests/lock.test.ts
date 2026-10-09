@@ -1,4 +1,4 @@
-// Failure modes P1-P4 and L1-L6 in docs/failure-modes.md.
+// Failure modes P1-P4 and L1-L7 in docs/failure-modes.md.
 import { memoryStore } from "foxgate";
 import { describe, expect, it, vi } from "vitest";
 import { createVault, memoryKeyStore, VaultError, type VaultEvent } from "../src/index.js";
@@ -175,5 +175,20 @@ describe("lock and release", () => {
     let ran = false;
     expect(await code(vault.use("vault:k", () => { ran = true; }))).toBe("hook-failed");
     expect(ran).toBe(false);
+  });
+
+  it("L7: lock during an unlock wins", async () => {
+    const vault = createVault();
+    await vault.initialize({ passphrase: PASS });
+    await vault.set("vault:k", VALUE, { domains: ["a.example"] });
+    vault.lock();
+    const pending = vault.unlock(PASS); // PBKDF2 takes far longer than 5 ms
+    await new Promise((done) => setTimeout(done, 5));
+    vault.lock();
+    expect(await code(pending)).toBe("locked");
+    expect(await vault.status()).toBe("locked");
+    expect(await code(vault.use("vault:k", (v) => v))).toBe("locked");
+    await vault.unlock(PASS);
+    expect(await vault.status()).toBe("unlocked");
   });
 });
