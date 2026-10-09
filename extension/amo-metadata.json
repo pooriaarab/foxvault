@@ -23,8 +23,12 @@
     "en-US": "https://github.com/pooriaarab/foxvault/issues"
   },
   "local_hosts": {
-    "http://127.0.0.1/*": "foxvault releases a secret only to servers on this computer in this version, for example a local model server or API on 127.0.0.1. The header and fill features need this access.",
-    "http://localhost/*": "The same local-only scope for servers that listen on the name localhost. foxvault sends no secret to any other host."
+    "http://127.0.0.1/*": {
+      "host_permission": "foxvault releases a secret only to servers on this computer in this version, for example a local model server or API on 127.0.0.1. The header and fill features need this access."
+    },
+    "http://localhost/*": {
+      "host_permission": "The same local-only scope for servers that listen on the name localhost. foxvault sends no secret to any other host."
+    }
   },
   "version": {
     "license": "MIT",
