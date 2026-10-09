@@ -11,6 +11,8 @@ async function vaultWith(secrets: Record<string, string>) {
   return vault;
 }
 
+// One character as a JSON \\u escape.
+const u = (c: string) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
 const b64 = (bytes: Uint8Array | string) => Buffer.from(bytes).toString("base64");
 
 describe("redact", () => {
@@ -106,7 +108,6 @@ describe("redact", () => {
 
   it("R12: JSON \\u escapes match, for all or some characters", async () => {
     const vault = await vaultWith({ "vault:k": VALUE });
-    const u = (c: string) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
     const all = [...VALUE].map(u).join("");
     const some = [...VALUE].map((c, i) => (i % 3 === 0 ? u(c) : c)).join("");
     for (const form of [all, all.toUpperCase().replace(/\\U/g, "\\u"), some]) {
