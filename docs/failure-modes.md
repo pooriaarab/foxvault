@@ -53,3 +53,22 @@ with `pnpm e2e`.
 | R9 | A value has regular expression characters, so `redact` matches other text or crashes. | Each character is escaped. `a.b.c.d.e` does not match `aXbXcXdXe`. | `redact.test.ts` R9 |
 | R10 | A long text makes `redact` slow (catastrophic backtracking). | 1 MB of text with 20 secrets takes under 2 seconds. | `redact.test.ts` R10 |
 | R11 | `redact` gets something that is not a string and returns it unchanged. | It throws `bad-value`. | `redact.test.ts` R11 |
+
+## Header injection (H)
+
+`headersFor` is the body of the blocking `webRequest.onBeforeSendHeaders`
+listener. The E2E test checks H1, H3, and H4 again in a real Firefox.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| H1 | The header goes to a host that is not in the rule. | Only a request to a host in the rule gets the header. | `headers.test.ts` H1, E2E |
+| H2 | A rule names a host that the secret does not allow, or the stored rule is changed to add one. | `injectHeader` throws `bad-rule`. At request time, the host must also match the secret's domains, which are bound to its ciphertext. | `headers.test.ts` H2 |
+| H3 | A redirect to another host carries the header there. | The redirected request is checked again. foxvault removes a header that holds the value from a request to a host that is not allowed. | `headers.test.ts` H3, E2E |
+| H4 | A web page (not the extension) sends a request to the allowed host and gets the user's key. | Only a request whose `originUrl` is in this extension gets the header. | `headers.test.ts` H4, E2E |
+| H5 | The key goes over plain `http:`. | Only `https:` gets the header, unless the rule sets `allowHttp`. | `headers.test.ts` H5 |
+| H6 | A bad header name or format, or a value with a line break, lets a request carry extra headers. | `bad-rule` for a header name that is not an HTTP token, or a format without exactly one `{secret}`. A value with a control character is not sent. | `headers.test.ts` H6 |
+| H7 | A locked passphrase vault makes the listener throw, or sends a stale value. | The request goes on with no header. | `headers.test.ts` H7 |
+| H8 | Stale rule: after `remove`, a new secret with the same handle is sent by the old rule. | `remove` deletes the secret's rules too. | `headers.test.ts` H8 |
+| H9 | The request already has a header with the same name, in any letter case, so two values go out. | foxvault replaces it. The request has one header with that name. | `headers.test.ts` H9 |
+| H10 | An injection is not recorded, or the event holds the value. | Each injection calls `onEvent` with kind `header`, the handle, and the host. If `onEvent` throws, the header is not sent. | `headers.test.ts` H10 |
+| H11 | The event page unloads, and the rules are gone after it wakes up. | Rules are stored with the secrets. A new vault object on the same storage sends the header. | `headers.test.ts` H11 |
