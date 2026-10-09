@@ -28,6 +28,8 @@ export interface FillRequest {
   selector: string;
   /** The foxgate token, after a human approved the fill. */
   token?: string;
+  /** The top document that the caller checked. When given, fill writes only into it. */
+  documentId?: string;
 }
 
 export type FillResult = { status: "filled"; host: string } | { status: "ask"; requestId: string } | { status: "refused"; reason: string };
@@ -77,7 +79,7 @@ export interface FillDeps {
 }
 
 export async function runFill(deps: FillDeps, request: FillRequest): Promise<FillResult> {
-  const { handle, tabId, selector, token } = request ?? {};
+  const { handle, tabId, selector, token, documentId } = request ?? {};
   let host: string | undefined;
   const refuse = async (reason: string): Promise<FillResult> => {
     // A handle that is not valid can be anything the planner wrote, so it is not echoed (F12).
@@ -85,13 +87,16 @@ export async function runFill(deps: FillDeps, request: FillRequest): Promise<Fil
     return { status: "refused", reason };
   };
   const goodInput = deps.validHandle(handle) && Number.isSafeInteger(tabId) && tabId >= 0 && typeof selector === "string" && selector.length > 0 && selector.length <= 1024;
-  if (!goodInput || (token !== undefined && typeof token !== "string")) return refuse("bad-input");
+  const goodDocument = documentId === undefined || (typeof documentId === "string" && documentId.length > 0 && documentId.length <= 256);
+  if (!goodInput || !goodDocument || (token !== undefined && typeof token !== "string")) return refuse("bad-input");
   if (!deps.gate) return refuse("no-gate");
   if (!deps.browser) return refuse("no-browser");
 
   // The top document of the tab. Frames are never filled (F4).
   const frame = await deps.browser.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => undefined);
   if (!frame) return refuse("no-tab");
+  // The caller's document must still be the top document of the tab (F15).
+  if (documentId !== undefined && frame.documentId !== documentId) return refuse("page-changed");
   let url: URL;
   try {
     url = new URL(frame.url);
@@ -134,7 +139,7 @@ export async function runFill(deps: FillDeps, request: FillRequest): Promise<Fil
     const results = await deps.browser.scripting.executeScript({ target: { tabId, documentIds: [frame.documentId] }, func: fillField, args: [selector, value, host] });
     result = results[0]?.result;
   } catch {
-    return refuse("frame-changed");
+    return refuse(documentId === undefined ? "frame-changed" : "page-changed");
   }
   if (result === "filled") return { status: "filled", host };
   return refuse(typeof result === "string" ? result : "not-found");

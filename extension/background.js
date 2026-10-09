@@ -44,7 +44,7 @@ const handlers = {
     return { secrets: await vault.list(), rules: await vault.headerRules(), events };
   },
   redact: ({ text }) => vault.redact(text),
-  fill: ({ handle, tabId, selector }) => vault.fill({ handle, tabId, selector }),
+  fill: ({ handle, tabId, selector, documentId }) => vault.fill({ handle, tabId, selector, documentId }),
   // Shows that the stored key cannot leave Firefox as bytes, and that a new
   // vault object can read the secrets with the key from IndexedDB.
   async "key-check"() {

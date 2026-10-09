@@ -1,4 +1,4 @@
-// Failure modes F1-F14 in docs/failure-modes.md.
+// Failure modes F1-F15 in docs/failure-modes.md.
 import { createFoxgate, type Action, type GrantInput } from "foxgate";
 import { describe, expect, it } from "vitest";
 import { createVault, FILL_TOOL, type FillBrowser, type VaultEvent, type VaultOptions } from "../src/index.js";
@@ -170,5 +170,20 @@ describe("fill", () => {
     vault.lock();
     expect(await vault.fill(request)).toEqual({ status: "refused", reason: "locked" });
     expect(calls).toEqual([]);
+  });
+
+  it("F15: a caller's documentId pins the fill to that document", async () => {
+    const page = { url: "https://pay.example.com/checkout", documentId: "doc-42" };
+    const { vault, calls } = await setup(page);
+    expect(await vault.fill({ ...request, documentId: "doc-41" })).toEqual({ status: "refused", reason: "page-changed" });
+    expect(calls).toEqual([]);
+    expect(await vault.fill({ ...request, documentId: "doc-42" })).toEqual({ status: "filled", host: "pay.example.com" });
+    expect(calls).toEqual([{ target: { tabId: 7, documentIds: ["doc-42"] }, args: ["#card", VALUE, "pay.example.com"] }]);
+    for (const bad of ["", 42, "x".repeat(257)]) {
+      expect(await vault.fill({ ...request, documentId: bad as string }), String(bad)).toEqual({ status: "refused", reason: "bad-input" });
+    }
+    // The document goes away between the check and the script call.
+    const gone = await setup({ ...page, fail: true });
+    expect(await gone.vault.fill({ ...request, documentId: "doc-42" })).toEqual({ status: "refused", reason: "page-changed" });
   });
 });

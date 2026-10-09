@@ -141,10 +141,10 @@ the planner only handles.
 | `injectHeader({ handle, header, hosts, format?, allowHttp? })` | Stores a header rule. `format` holds `{secret}` one time, for example `Bearer {secret}`. `http:` needs `allowHttp: true`. |
 | `removeHeader(id)`, `headerRules()` | Delete a rule, or list them. |
 | `headersFor(details, extensionOrigin)` | The body of a blocking `onBeforeSendHeaders` listener. It never throws. While the vault is locked, it adds nothing and removes each rule header from a request that the rule does not allow. |
-| `fill({ handle, tabId, selector, token? })` | Fills an input or textarea in the top document of the tab. Returns `{ status: "filled", host }`, `{ status: "ask", requestId }`, or `{ status: "refused", reason }`. |
+| `fill({ handle, tabId, selector, token?, documentId? })` | Fills an input or textarea in the top document of the tab. With `documentId`, it fills only that document, and refuses `page-changed` when the tab shows another one. Pass it when your code already checked the page, for example its total. Returns `{ status: "filled", host }`, `{ status: "ask", requestId }`, or `{ status: "refused", reason }`. |
 
 Fill reasons: `bad-input`, `no-gate`, `no-browser`, `no-tab`, `domain`, `http`,
-`locked`, `not-found`, `frame-changed`, `host-changed`, `not-a-field`, `hook-failed`,
+`locked`, `not-found`, `frame-changed`, `page-changed`, `host-changed`, `not-a-field`, `hook-failed`,
 and every foxgate deny reason, for example `no-grant` or `action-changed`.
 
 ### Other exports
