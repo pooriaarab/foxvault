@@ -73,6 +73,7 @@ listener. The E2E test checks H1, H3, and H4 again in a real Firefox.
 | H9 | The request already has a header with the same name, in any letter case, so two values go out. | foxvault replaces it. The request has one header with that name. | `headers.test.ts` H9 |
 | H10 | An injection is not recorded, or the event holds the value. | Each injection calls `onEvent` with kind `header`, the handle, and the host. If `onEvent` throws, the header is not sent. | `headers.test.ts` H10 |
 | H11 | The event page unloads, and the rules are gone after it wakes up. | Rules are stored with the secrets. A new vault object on the same storage sends the header. | `headers.test.ts` H11 |
+| H12 | A passphrase vault locks, and then a redirect carries the header to another host. foxvault cannot compare values while locked, so it does not remove the header. | While locked, or when the vault cannot open, each stored rule still runs strip-only: a request to a host outside the rule (or plain http without `allowHttp`) loses every header with the rule's name. Nothing is added. | `headers.test.ts` H12 |
 
 ## Fill (F)
 
