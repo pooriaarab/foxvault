@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Checkout</title>
+<h1>Checkout</h1>
+<label>Card number <input id="card" autocomplete="off" size="24" /></label>
+<script>
+  const frame = new URLSearchParams(location.search).get("frame");
+  if (frame) document.body.append(Object.assign(document.createElement("iframe"), { src: frame, width: 420, height: 120 }));
+</script>
