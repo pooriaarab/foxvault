@@ -98,7 +98,7 @@ try {
 
   // Fill: a card number for A only, through foxgate.
   const add = (message) => popup.evaluate((m) => browser.runtime.sendMessage({ type: "add", ...m }), message);
-  check("fill: the card secret is added", "added vault:card", await add({ handle: "vault:card", value: CARD, hosts: "api.localhost", header: "" }));
+  check("fill: the card secret is added", "added vault:card", await add({ handle: "vault:card", value: CARD, hosts: "api.localhost", header: "", allowHttp: true }));
   const fill = async (url, selector) => {
     const page = await fox.open(url);
     const tabId = await popup.evaluate((u) => browser.tabs.query({ url: u }).then((tabs) => tabs.at(-1).id), url.replace(/:\d+\/.*$/, "/*"));

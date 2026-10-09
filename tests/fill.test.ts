@@ -1,5 +1,5 @@
-// Failure modes F1-F10 in docs/failure-modes.md.
-import { createFoxgate, type GrantInput } from "foxgate";
+// Failure modes F1-F14 in docs/failure-modes.md.
+import { createFoxgate, type Action, type GrantInput } from "foxgate";
 import { describe, expect, it } from "vitest";
 import { createVault, FILL_TOOL, type FillBrowser, type VaultEvent, type VaultOptions } from "../src/index.js";
 
@@ -122,6 +122,53 @@ describe("fill", () => {
       expect(await vault.fill({ ...request, ...(bad as object) }), JSON.stringify(bad)).toEqual({ status: "refused", reason: "bad-input" });
     }
     expect(await vault.fill({ ...request, handle: "card" })).toEqual({ status: "refused", reason: "bad-input" });
+    expect(calls).toEqual([]);
+  });
+
+  it("F11: a secret that changes during the decision is checked again", async () => {
+    const { browser, calls } = fakeBrowser({ url: "https://pay.example.com/" });
+    let vault: ReturnType<typeof createVault>;
+    const gate = {
+      check: async (action: Action) => {
+        await vault.remove("vault:card");
+        await vault.set("vault:card", VALUE, { domains: ["other.example.com"] });
+        return { decision: "allow" as const, grantId: "g", action };
+      },
+      redeem: async () => ({ decision: "deny" as const, reason: "bad-token" as const, message: "" }),
+    };
+    vault = createVault({ gate, browser });
+    await vault.initialize();
+    await vault.set("vault:card", VALUE, { domains: ["pay.example.com"] });
+    expect(await vault.fill(request)).toEqual({ status: "refused", reason: "domain" });
+    expect(calls).toEqual([]);
+  });
+
+  it("F12: a bad handle is not echoed in the event", async () => {
+    const events: VaultEvent[] = [];
+    const { vault } = await setup({ url: "https://pay.example.com/" }, {}, { onEvent: (e) => void events.push(e) });
+    await vault.fill({ ...request, handle: "sk-live-pasted-by-mistake" });
+    expect(events).toEqual([expect.objectContaining({ type: "refuse", handle: "", reason: "bad-input" })]);
+  });
+
+  it("F13: an http page needs allowHttp on the secret", async () => {
+    const { vault, calls } = await setup({ url: "http://pay.example.com/checkout" });
+    expect(await vault.fill(request)).toEqual({ status: "refused", reason: "http" });
+    expect(calls).toEqual([]);
+    await vault.remove("vault:card");
+    await vault.set("vault:card", VALUE, { domains: ["pay.example.com"], allowHttp: true });
+    expect(await vault.list()).toEqual([expect.objectContaining({ handle: "vault:card", allowHttp: true })]);
+    expect(await vault.fill(request)).toEqual({ status: "filled", host: "pay.example.com" });
+  });
+
+  it("F14: a locked passphrase vault refuses instead of throwing", async () => {
+    const { gate, host } = createFoxgate({ tools: { [FILL_TOOL]: "fill" } });
+    await host.addGrant({ scope: "fill", domains: ["pay.example.com"] });
+    const { browser, calls } = fakeBrowser({ url: "https://pay.example.com/" });
+    const vault = createVault({ gate, browser });
+    await vault.initialize({ passphrase: "correct horse battery staple" });
+    await vault.set("vault:card", VALUE, { domains: ["pay.example.com"] });
+    vault.lock();
+    expect(await vault.fill(request)).toEqual({ status: "refused", reason: "locked" });
     expect(calls).toEqual([]);
   });
 });
