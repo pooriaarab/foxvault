@@ -1,7 +1,10 @@
-// AES-GCM with Web Crypto (docs/failure-modes.md V1-V3). Every
+// AES-GCM and PBKDF2 with Web Crypto (docs/failure-modes.md V1-V3). Every
 // key that this file makes is non-extractable.
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+/** PBKDF2-SHA-256 iterations. OWASP gives 600,000 as the 2023 minimum. */
+export const MIN_ITERATIONS = 600_000;
 
 /** One AES-GCM ciphertext: a 12-byte IV and the data with its tag, both base64. */
 export interface Sealed {
@@ -27,6 +30,14 @@ export const randomBytes = (length: number) => crypto.getRandomValues(new Uint8A
 
 export const newDeviceKey = () =>
   crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]) as Promise<CryptoKey>;
+
+export async function passphraseKey(passphrase: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey("raw", encoder.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, base, { name: "AES-GCM", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+}
 
 export async function seal(key: CryptoKey, text: string, aad: string): Promise<Sealed> {
   const iv = randomBytes(12);
