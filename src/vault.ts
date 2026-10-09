@@ -1,11 +1,12 @@
 // The encrypted store (docs/failure-modes.md V1-V8, P1-P4, L1-L6). One JSON
 // record holds the ciphertexts. Keys and plain values live only in memory,
 // after unlock, until the lock time.
-import { canonicalJson, memoryStore, parsePattern, type PublicSuffix, type Store } from "foxgate";
+import { canonicalJson, memoryStore, parsePattern, type Gate, type PublicSuffix, type Store } from "foxgate";
 import { MIN_ITERATIONS, fromBase64, newDeviceKey, passphraseKey, randomBytes, seal, toBase64, unseal, type Sealed } from "./crypto.js";
 import { VaultError } from "./errors.js";
 import { memoryKeyStore, type KeyStore } from "./keystore.js";
 import { redactText } from "./redact.js";
+import { runFill, type FillBrowser, type FillRequest, type FillResult } from "./fill.js";
 import { applyRules, checkRule, fromExtension, type HeaderRule, type HeaderRuleInput, type RequestDetails } from "./headers.js";
 
 const RECORD = "foxvault";
@@ -28,16 +29,22 @@ export interface VaultOptions {
   autoLockMs?: number;
   /** Runs before each release. If it throws, foxvault does not release the value. */
   onEvent?: (event: VaultEvent) => void | Promise<void>;
+  /** The foxgate gate that judges each fill. With no gate, fill refuses. */
+  gate?: Gate;
+  /** For fill: an object with webNavigation.getFrame and scripting.executeScript. In Firefox, pass browser. */
+  browser?: FillBrowser;
 }
 
-/** One release of a value. It never holds the value. */
+/** One release of a value, or one refused fill. It never holds the value. */
 export interface VaultEvent {
-  type: "release";
-  kind: "use" | "header";
+  type: "release" | "refuse";
+  kind: "use" | "header" | "fill";
   handle: string;
   at: number;
-  /** The request host, for kind `header`. */
+  /** The request host or the page host, for kinds `header` and `fill`. */
   host?: string;
+  /** Why a fill was refused. */
+  reason?: string;
 }
 
 /** What `list` shows. It never holds the value. */
@@ -340,6 +347,28 @@ export function createVault(options: VaultOptions = {}) {
         };
         return applyRules(details, rules, secret, releaseHeader);
       }).catch(() => undefined);
+    },
+
+    /** Fill a form field in the top document of a tab, when the secret's domains and the gate allow it. */
+    fill(request: FillRequest): Promise<FillResult> {
+      return runFill(
+        {
+          gate: options.gate,
+          browser: options.browser,
+          validHandle: (handle) => HANDLE.test(String(handle)),
+          domains: (handle) => serial(async () => (await readInitialized()).secrets[handleName(handle)]?.domains),
+          value: (handle) =>
+            serial(async () => {
+              const found = (await ensureOpen(await readInitialized())).values.get(handleName(handle));
+              if (!found) throw new VaultError("not-found", `${handle} does not exist.`);
+              return found.value;
+            }),
+          emit: async (type, handle, host, reason) => {
+            await options.onEvent?.({ type, kind: "fill", handle, at: clock(), ...(host && { host }), ...(reason && { reason }) });
+          },
+        },
+        request,
+      );
     },
 
     /** Give the value to host code. Never call this for the AI planner. */
