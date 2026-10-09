@@ -157,6 +157,7 @@ row is a way that the listed build or the submission can go wrong.
 | AR7 | A re-run submits a version that AMO already has as listed | `version-status` says `listed`, and the step skips web-ext sign and finishes the release |
 | AR8 | AMO has the version as unlisted | `version-status` stops and says to bump the version |
 | AR9 | The AMO version lookup fails (401, 500, network) | `version-status` stops; it never guesses `absent` |
+| AR10 | The add-on already exists on AMO, and the version lookup sends a parameter AMO refuses on a single version (400), so every release stops | `version-status` asks for `versions/v<version>/` with no query; an owner sees listed and unlisted versions there |
 | AE1 | The `http://*.localhost/*` host permission leaves the release build, so the E2E test cannot reach its two hosts (`api.localhost`, `other.localhost`). | `node scripts/build-ext.mjs --e2e` adds it to the manifest. `pnpm e2e` uses that build. |
 | AE2 | The release build keeps `*.localhost`, a host permission that only the test uses. | The release build has only `http://127.0.0.1/*` and `http://localhost/*`, each with a reason in `local_hosts`. `pnpm check:amo` stops on any other local host. |
 
