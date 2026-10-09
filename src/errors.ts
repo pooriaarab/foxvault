@@ -3,13 +3,18 @@ export type VaultErrorCode =
   | "not-initialized"
   | "already-initialized"
   | "locked"
+  | "bad-passphrase"
+  | "weak-passphrase"
+  | "weak-kdf"
   | "corrupt"
   | "key-lost"
   | "not-found"
   | "exists"
   | "bad-handle"
   | "bad-value"
-  | "bad-domain";
+  | "bad-domain"
+  | "use-failed"
+  | "hook-failed";
 
 export class VaultError extends Error {
   readonly code: VaultErrorCode;

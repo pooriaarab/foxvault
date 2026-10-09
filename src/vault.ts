@@ -1,21 +1,39 @@
-// The encrypted store (docs/failure-modes.md V1-V11). One JSON record holds
-// the ciphertexts. Keys and plain values live only in memory, after unlock.
+// The encrypted store (docs/failure-modes.md V1-V8, P1-P4, L1-L6). One JSON
+// record holds the ciphertexts. Keys and plain values live only in memory,
+// after unlock, until the lock time.
 import { canonicalJson, memoryStore, parsePattern, type PublicSuffix, type Store } from "foxgate";
-import { newDeviceKey, seal, unseal, type Sealed } from "./crypto.js";
+import { MIN_ITERATIONS, fromBase64, newDeviceKey, passphraseKey, randomBytes, seal, toBase64, unseal, type Sealed } from "./crypto.js";
 import { VaultError } from "./errors.js";
 import { memoryKeyStore, type KeyStore } from "./keystore.js";
 
 const RECORD = "foxvault";
 const CHECK = "foxvault:check";
 const HANDLE = /^vault:([a-z0-9][a-z0-9._-]{0,63})$/;
+const MIN_PASSPHRASE = 12;
 
 export interface VaultOptions {
   /** Where the ciphertexts live. Default: memoryStore(). In Firefox, storageAreaStore(browser.storage.local). */
   store?: Store;
   /** Where device mode keeps its key. Default: memoryKeyStore(). In Firefox, indexedDbKeyStore(). */
   keyStore?: KeyStore;
+  /** PBKDF2 iterations for a new passphrase vault. Default and minimum: 600,000. */
+  iterations?: number;
   /** Needed for "*." domain patterns. In Firefox 153+, pass browser.publicSuffix. */
   publicSuffix?: PublicSuffix;
+  /** The clock, in ms since 1970. Default: Date.now. */
+  now?: () => number;
+  /** The vault locks this long after unlock. Default: 15 minutes. */
+  autoLockMs?: number;
+  /** Runs before each release. If it throws, foxvault does not release the value. */
+  onEvent?: (event: VaultEvent) => void | Promise<void>;
+}
+
+/** One release of a value. It never holds the value. */
+export interface VaultEvent {
+  type: "release";
+  kind: "use";
+  handle: string;
+  at: number;
 }
 
 /** What `list` shows. It never holds the value. */
@@ -31,12 +49,14 @@ interface StoredSecret extends Sealed {
 }
 interface VaultRecord {
   version: 1;
-  mode: "device";
+  mode: "device" | "passphrase";
+  kdf?: { iterations: number; salt: string };
   check: Sealed;
   secrets: Record<string, StoredSecret>;
 }
 interface Open {
   key: CryptoKey;
+  lockAt: number;
   values: Map<string, { value: string; info: SecretInfo }>;
 }
 
@@ -47,8 +67,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 function parseRecord(raw: unknown): VaultRecord | undefined {
   if (raw === undefined) return undefined;
   if (!isObject(raw) || raw.version !== 1) throw corrupt("unknown version");
-  const { mode, check, secrets } = raw;
-  if (mode !== "device") throw corrupt("unknown mode");
+  const { mode, kdf, check, secrets } = raw;
+  if (mode !== "device" && mode !== "passphrase") throw corrupt("unknown mode");
+  if (mode === "passphrase" && (!isObject(kdf) || typeof kdf.iterations !== "number" || typeof kdf.salt !== "string")) throw corrupt("no key settings");
   if (!isSealed(check) || !isObject(secrets)) throw corrupt("missing fields");
   for (const s of Object.values(secrets)) {
     const ok = isSealed(s) && Array.isArray((s as StoredSecret).domains) && typeof (s as StoredSecret).createdAt === "number";
@@ -70,10 +91,43 @@ const aadOf = (name: string, domains: string[]) => canonicalJson({ domains, hand
 export function createVault(options: VaultOptions = {}) {
   const store = options.store ?? memoryStore();
   const keyStore = options.keyStore ?? memoryKeyStore();
+  const autoLockMs = options.autoLockMs ?? 15 * 60_000;
   let open: Open | undefined;
+  let latest = -Infinity;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let tail: Promise<unknown> = Promise.resolve();
 
-  // Every operation runs after the one before it (V9).
+  // The latest time seen, so a clock that goes back does not extend the unlock (L1).
+  function clock(): number {
+    const t = (options.now ?? Date.now)();
+    if (!Number.isFinite(t)) return Number.NaN;
+    return (latest = Math.max(latest, t));
+  }
+
+  function lock(): void {
+    open = undefined;
+    clearTimeout(timer);
+  }
+
+  // Keys and values live in memory only, so a new vault object starts locked (L2).
+  function opened(key: CryptoKey, values: Open["values"]): Open {
+    lock();
+    const at = clock();
+    open = { key, values, lockAt: at + autoLockMs };
+    // The timer only drops memory early. Every operation checks the clock itself (L1).
+    timer = setTimeout(lock, autoLockMs);
+    (timer as { unref?: () => void }).unref?.();
+    return open;
+  }
+
+  // The open state, or undefined after the lock time.
+  function current(): Open | undefined {
+    const t = clock();
+    if (open && !(t < open.lockAt)) lock();
+    return open;
+  }
+
+  // Every operation runs after the one before it (V6).
   function serial<T>(fn: () => Promise<T>): Promise<T> {
     const run = tail.then(fn, fn);
     tail = run.catch(() => undefined);
@@ -101,11 +155,18 @@ export function createVault(options: VaultOptions = {}) {
     });
   }
 
-  async function unlockWith(record: VaultRecord): Promise<Open> {
-    const key = await keyStore.load();
-    if (!key) throw new VaultError("key-lost", "The device key is gone, so the stored secrets cannot be read.");
+  async function unlockWith(record: VaultRecord, passphrase?: string): Promise<Open> {
+    let key: CryptoKey | undefined;
+    if (record.mode === "passphrase") {
+      if (typeof passphrase !== "string") throw new VaultError("locked", "The vault is locked. Unlock it with the passphrase.");
+      if (record.kdf!.iterations < MIN_ITERATIONS) throw new VaultError("weak-kdf", "The stored key settings use too few PBKDF2 iterations.");
+      key = await passphraseKey(passphrase, fromBase64(record.kdf!.salt), record.kdf!.iterations);
+    } else {
+      key = await keyStore.load();
+      if (!key) throw new VaultError("key-lost", "The device key is gone, so the stored secrets cannot be read.");
+    }
     await unseal(key, record.check, CHECK).catch(() => {
-      throw corrupt("the device key does not match");
+      throw record.mode === "passphrase" ? new VaultError("bad-passphrase", "The passphrase is wrong.") : corrupt("the device key does not match");
     });
     const values: Open["values"] = new Map();
     for (const [name, secret] of Object.entries(record.secrets)) {
@@ -114,39 +175,55 @@ export function createVault(options: VaultOptions = {}) {
       });
       values.set(name, { value, info: { handle: `vault:${name}`, domains: [...secret.domains], createdAt: secret.createdAt } });
     }
-    return { key, values };
+    return opened(key, values);
   }
 
   // Device mode unlocks by itself: it has no passphrase to ask for.
   async function ensureOpen(record: VaultRecord): Promise<Open> {
-    return (open ??= await unlockWith(record));
+    const state = current();
+    if (state) return state;
+    if (record.mode === "device") return unlockWith(record);
+    throw new VaultError("locked", "The vault is locked. Unlock it with the passphrase.");
   }
 
   return {
     /** `new` before initialize, then `locked` or `unlocked`. Throws `corrupt` for an unreadable record. */
-    status: () => serial(async () => ((await read()) ? (open ? "unlocked" : "locked") : "new") as "new" | "locked" | "unlocked"),
+    status: () => serial(async () => ((await read()) ? (current() ? "unlocked" : "locked") : "new") as "new" | "locked" | "unlocked"),
 
-    /** Make the device key and keep it in the key store. */
-    initialize: () =>
+    /** Make the vault key. With a passphrase: PBKDF2. Without: a device key in the key store. */
+    initialize: (init: { passphrase?: string } = {}) =>
       serial(async () => {
         if (await read()) throw new VaultError("already-initialized", "The vault already has a key.");
-        const key = await newDeviceKey();
-        await keyStore.save(key);
-        await store.set(RECORD, { version: 1, mode: "device", check: await seal(key, CHECK, CHECK), secrets: {} } satisfies VaultRecord);
-        open = { key, values: new Map() };
+        let key: CryptoKey;
+        let kdf: VaultRecord["kdf"];
+        if (init.passphrase !== undefined) {
+          const iterations = options.iterations ?? MIN_ITERATIONS;
+          if (!Number.isSafeInteger(iterations) || iterations < MIN_ITERATIONS) throw new VaultError("weak-kdf", `Use at least ${MIN_ITERATIONS} PBKDF2 iterations.`);
+          if (typeof init.passphrase !== "string" || [...init.passphrase].length < MIN_PASSPHRASE) {
+            throw new VaultError("weak-passphrase", `Use a passphrase of at least ${MIN_PASSPHRASE} characters.`);
+          }
+          const salt = randomBytes(16);
+          key = await passphraseKey(init.passphrase, salt, iterations);
+          kdf = { iterations, salt: toBase64(salt) };
+        } else {
+          key = await newDeviceKey();
+          await keyStore.save(key);
+        }
+        const record: VaultRecord = { version: 1, mode: kdf ? "passphrase" : "device", check: await seal(key, CHECK, CHECK), secrets: {} };
+        if (kdf) record.kdf = kdf;
+        await store.set(RECORD, record);
+        opened(key, new Map());
       }),
 
-    /** Decrypt every secret into memory. */
-    unlock: () =>
+    /** Decrypt every secret into memory. Device mode needs no passphrase. */
+    unlock: (passphrase?: string) =>
       serial(async () => {
-        open = undefined;
-        open = await unlockWith(await readInitialized());
+        lock();
+        await unlockWith(await readInitialized(), passphrase);
       }),
 
     /** Drop the key and the values from memory. */
-    lock(): void {
-      open = undefined;
-    },
+    lock,
 
     /** Store a new secret. Its handle and domains are bound to the ciphertext. */
     set: (handle: string, value: string, settings: { domains: string[] }) =>
@@ -166,6 +243,18 @@ export function createVault(options: VaultOptions = {}) {
         return { ...info, domains: [...domains] };
       }),
 
+    /** Delete a secret. Returns false when it does not exist. */
+    remove: (handle: string) =>
+      serial(async () => {
+        const name = handleName(handle);
+        const record = await readInitialized();
+        if (!record.secrets[name]) return false;
+        delete record.secrets[name];
+        await store.set(RECORD, record);
+        open?.values.delete(name);
+        return true;
+      }),
+
     /** Every handle with its domains. It works while locked, and it holds no values. */
     list: () =>
       serial(async (): Promise<SecretInfo[]> => {
@@ -181,9 +270,19 @@ export function createVault(options: VaultOptions = {}) {
         const name = handleName(handle);
         const found = (await ensureOpen(await readInitialized())).values.get(name);
         if (!found) throw new VaultError("not-found", `vault:${name} does not exist.`);
+        try {
+          await options.onEvent?.({ type: "release", kind: "use", handle: found.info.handle, at: clock() });
+        } catch {
+          throw new VaultError("hook-failed", "The onEvent hook threw, so foxvault did not release the value.");
+        }
         return found;
       });
-      return fn(secret.value, { ...secret.info, domains: [...secret.info.domains] });
+      try {
+        return await fn(secret.value, { ...secret.info, domains: [...secret.info.domains] });
+      } catch {
+        // The message and the cause can hold the value, so they are dropped (L4).
+        throw new VaultError("use-failed", "The function given to use threw. foxvault drops its message, because it can hold the value.");
+      }
     },
   };
 }
