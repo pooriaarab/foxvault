@@ -97,3 +97,22 @@ export async function applyRules(
   }
   return changed ? { requestHeaders: headers } : undefined;
 }
+
+/**
+ * For a vault that cannot open (locked, or a failed unlock): add nothing, and
+ * remove every header with a rule's name from a request that the rule does
+ * not allow, because the value cannot be compared (H12).
+ */
+export function stripOnly(details: RequestDetails, rules: HeaderRule[], domainsOf: (handle: string) => string[] | undefined) {
+  const url = new URL(details.url);
+  const host = url.hostname;
+  const before = details.requestHeaders ?? [];
+  let headers = [...before];
+  for (const rule of rules) {
+    const domains = domainsOf(rule.handle) ?? [];
+    const schemeOk = url.protocol === "https:" || (url.protocol === "http:" && rule.allowHttp);
+    const hostOk = rule.hosts.some((p) => matchesPattern(host, toPattern(p))) && domains.some((p) => matchesPattern(host, toPattern(p)));
+    if (!schemeOk || !hostOk) headers = headers.filter((h) => h.name.toLowerCase() !== rule.header.toLowerCase());
+  }
+  return headers.length === before.length ? undefined : { requestHeaders: headers };
+}

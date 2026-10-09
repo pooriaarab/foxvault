@@ -7,7 +7,7 @@ import { VaultError } from "./errors.js";
 import { memoryKeyStore, type KeyStore } from "./keystore.js";
 import { redactText } from "./redact.js";
 import { runFill, type FillBrowser, type FillRequest, type FillResult } from "./fill.js";
-import { applyRules, checkRule, fromExtension, type HeaderRule, type HeaderRuleInput, type RequestDetails } from "./headers.js";
+import { applyRules, checkRule, fromExtension, stripOnly, type HeaderRule, type HeaderRuleInput, type RequestDetails } from "./headers.js";
 
 const RECORD = "foxvault";
 const CHECK = "foxvault:check";
@@ -356,8 +356,8 @@ export function createVault(options: VaultOptions = {}) {
         const record = await read();
         const rules = Object.entries(record?.rules ?? {}).map(([id, rule]) => ({ id, ...rule }));
         if (!record || rules.length === 0) return undefined;
-        const state = record.mode === "device" || current() ? await ensureOpen(record) : undefined;
-        if (!state) return undefined;
+        const state = record.mode === "device" || current() ? await ensureOpen(record).catch(() => undefined) : undefined;
+        if (!state) return stripOnly(details, rules, (handle) => record.secrets[handle.slice("vault:".length)]?.domains);
         const secret = (handle: string) => {
           const found = state.values.get(handle.slice("vault:".length));
           return found && { value: found.value, domains: found.info.domains };

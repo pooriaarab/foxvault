@@ -1,4 +1,4 @@
-// Failure modes H1-H11 in docs/failure-modes.md.
+// Failure modes H1-H12 in docs/failure-modes.md.
 import { memoryStore } from "foxgate";
 import { describe, expect, it } from "vitest";
 import { createVault, memoryKeyStore, VaultError, type VaultEvent, type VaultOptions } from "../src/index.js";
@@ -154,5 +154,18 @@ describe("header injection", () => {
     const [rule] = await after.headerRules();
     expect(await after.removeHeader(rule!.id)).toBe(true);
     expect(auth(await send(after, "https://api.example.com/"))).toEqual([]);
+  });
+
+  it("H12: a locked vault still strips the header from a request to another host", async () => {
+    const vault = createVault({ publicSuffix });
+    await vault.initialize({ passphrase: "correct horse battery staple" });
+    await vault.set("vault:k", VALUE, { domains: ["api.example.com"] });
+    await vault.injectHeader({ handle: "vault:k", header: "Authorization", hosts: ["api.example.com"], format: "Bearer {secret}" });
+    vault.lock();
+    const carried = [{ name: "authorization", value: `Bearer ${VALUE}` }, { name: "Accept", value: "*/*" }];
+    expect(await send(vault, "https://evil.test/after-redirect", `${EXT}popup.html`, carried)).toEqual([{ name: "Accept", value: "*/*" }]);
+    expect(await send(vault, "http://api.example.com/", `${EXT}popup.html`, carried)).toEqual([{ name: "Accept", value: "*/*" }]);
+    expect(auth(await send(vault, "https://api.example.com/", `${EXT}popup.html`, carried))).toEqual([`Bearer ${VALUE}`]);
+    expect(auth(await send(vault, "https://api.example.com/"))).toEqual([]);
   });
 });
