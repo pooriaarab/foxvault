@@ -37,3 +37,19 @@ with `pnpm e2e`.
 | L4 | An error message holds the value: from bad input, or from the function in `use`. | foxvault errors never hold a value. When the `use` function throws, foxvault throws `use-failed` and drops the original message and cause. | `lock.test.ts` L4 |
 | L5 | `lock` leaves values in memory. | After `lock`, `use` throws `locked` in passphrase mode. `list` still shows handles and domains, but no values. | `lock.test.ts` L5 |
 | L6 | A release is not recorded, or the event holds the value. | Each release calls `onEvent` with the handle and the kind, and no value. When `onEvent` throws, foxvault does not release the value. | `lock.test.ts` L6 |
+
+## Redact (R)
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| R1 | The plain value goes to the model or a log. | `redact` puts the handle where the value was. | `redact.test.ts` R1 |
+| R2 | The value is split across lines, or has spaces or dashes in it (for example, a card number `4242 4242 4242 4242`). | Whitespace and dashes between the characters still match. | `redact.test.ts` R2 |
+| R3 | The value is in base64 (standard or URL-safe, with or without padding), or the base64 is wrapped across lines. | Each form matches. The value is UTF-8 first, so non-ASCII values match too. | `redact.test.ts` R3 |
+| R4 | The value is inside a longer base64 text, for example `Basic base64(user:key)`, at any byte offset. | The part of the base64 that comes only from the value is replaced, at each of the 3 offsets. | `redact.test.ts` R4 |
+| R5 | The value is URL-encoded, form-encoded (`+` for a space), or uses lowercase `%` codes. | Each form matches. | `redact.test.ts` R5 |
+| R6 | The value is in hex (lowercase or uppercase), or JSON-escaped. | Each form matches. | `redact.test.ts` R6 |
+| R7 | The vault is locked, so `redact` cannot know the values and returns the text unchanged. | `redact` throws `locked`. It never returns text that it did not check. | `redact.test.ts` R7 |
+| R8 | One secret is part of a longer secret, so a part of the longer one is left. | Longer forms are replaced first. No part of either value is left. | `redact.test.ts` R8 |
+| R9 | A value has regular expression characters, so `redact` matches other text or crashes. | Each character is escaped. `a.b.c.d.e` does not match `aXbXcXdXe`. | `redact.test.ts` R9 |
+| R10 | A long text makes `redact` slow (catastrophic backtracking). | 1 MB of text with 20 secrets takes under 2 seconds. | `redact.test.ts` R10 |
+| R11 | `redact` gets something that is not a string and returns it unchanged. | It throws `bad-value`. | `redact.test.ts` R11 |

@@ -5,6 +5,7 @@ import { canonicalJson, memoryStore, parsePattern, type PublicSuffix, type Store
 import { MIN_ITERATIONS, fromBase64, newDeviceKey, passphraseKey, randomBytes, seal, toBase64, unseal, type Sealed } from "./crypto.js";
 import { VaultError } from "./errors.js";
 import { memoryKeyStore, type KeyStore } from "./keystore.js";
+import { redactText } from "./redact.js";
 
 const RECORD = "foxvault";
 const CHECK = "foxvault:check";
@@ -262,6 +263,14 @@ export function createVault(options: VaultOptions = {}) {
         return Object.entries(record.secrets)
           .map(([name, s]) => ({ handle: `vault:${name}`, domains: [...s.domains], createdAt: s.createdAt }))
           .toSorted((a, b) => a.handle.localeCompare(b.handle));
+      }),
+
+    /** Replace every stored value, and its usual encodings, with its handle. Throws `locked` rather than skip a value. */
+    redact: (text: string) =>
+      serial(async () => {
+        if (typeof text !== "string") throw new VaultError("bad-value", "redact takes a string.");
+        const state = await ensureOpen(await readInitialized());
+        return redactText(text, [...state.values.values()].map(({ value, info }) => ({ handle: info.handle, value })));
       }),
 
     /** Give the value to host code. Never call this for the AI planner. */
