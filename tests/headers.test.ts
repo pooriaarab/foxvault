@@ -74,9 +74,10 @@ describe("header injection", () => {
 
   it("H4: a request from a web page or another extension gets nothing", async () => {
     const vault = await setup();
-    for (const origin of ["https://evil.test/page.html", "moz-extension://other/popup.html", undefined, "moz-extension://4b1d.evil/"]) {
-      expect(auth(await send(vault, "https://api.example.com/", origin)), String(origin)).toEqual([]);
+    for (const origin of ["https://evil.test/page.html", "moz-extension://other/popup.html", "moz-extension://4b1d.evil/", ""]) {
+      expect(auth(await send(vault, "https://api.example.com/", origin)), origin).toEqual([]);
     }
+    expect(await vault.headersFor({ url: "https://api.example.com/", requestHeaders: [] }, EXT)).toBeUndefined();
   });
 
   it("H5: plain http gets the header only with allowHttp", async () => {
