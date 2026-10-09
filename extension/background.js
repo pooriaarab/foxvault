@@ -1,13 +1,17 @@
 // The demo background (an MV3 event page). It runs foxvault with the real
 // storage.local, a device key in IndexedDB, and the blocking header
-// listener. The popup never gets a value back: only handles, hashes from the
-// echo server, and redacted text.
-import { storageAreaStore } from "foxgate";
-import { attachHeaderInjection, createVault, indexedDbKeyStore } from "../src/index.ts";
+// listener. fill asks foxgate first. The popup never gets a value back:
+// only handles, hashes from the echo server, and redacted text.
+import { createFoxgate, storageAreaStore } from "foxgate";
+import { FILL_TOOL, attachHeaderInjection, createVault, indexedDbKeyStore } from "../src/index.ts";
 
 const events = [];
 const store = storageAreaStore(browser.storage.local);
+// The host registers the fill tool. Each secret gets a fill grant for its hosts.
+const { gate, host } = createFoxgate({ tools: { [FILL_TOOL]: "fill" }, store, publicSuffix: browser.publicSuffix });
 const vault = createVault({
+  gate,
+  browser,
   store,
   keyStore: indexedDbKeyStore(),
   publicSuffix: browser.publicSuffix,
@@ -30,6 +34,7 @@ const handlers = {
     const domains = split(hosts);
     await vault.set(handle, value, { domains });
     if (header) await vault.injectHeader({ handle, header, hosts: domains, format, allowHttp });
+    await host.addGrant({ scope: "fill", domains, tools: [FILL_TOOL] });
     return `added ${handle}`;
   },
   async remove({ handle }) {
@@ -39,6 +44,7 @@ const handlers = {
     return { secrets: await vault.list(), rules: await vault.headerRules(), events };
   },
   redact: ({ text }) => vault.redact(text),
+  fill: ({ handle, tabId, selector }) => vault.fill({ handle, tabId, selector }),
   // Shows that the stored key cannot leave Firefox as bytes, and that a new
   // vault object can read the secrets with the key from IndexedDB.
   async "key-check"() {

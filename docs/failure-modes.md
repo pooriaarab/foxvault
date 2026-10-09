@@ -117,3 +117,14 @@ loopback address. The echo servers log a SHA-256 hash of each
 | E4 | A web page on B sends a request to A and gets the key added. | A logs that request with no header. | E2E E4 |
 | E5 | `redact` misses the value in a sample prompt. | The value, its base64, and the value split across two lines all become the handle. | E2E E5 |
 | E6 | A header release is not recorded, or is recorded for the wrong host. | The release events name A only. | E2E E6 |
+
+### Fill in Firefox
+
+The page `form.html` has a card field. With `?frame=`, it also shows that URL
+in an iframe. `frame.html` has a card field and a field named `#frame-only`.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| E7 | `fill` does not reach the field on the allowed host, or the bundled function does not run in Firefox. | The card field on A shows the value. | E2E E7 |
+| E8 | `fill` writes into a cross-origin iframe. | A field that is only in the iframe gives `not-found`, and the iframe fields stay empty. | E2E E8 |
+| E9 | `fill` writes on another host, also when that host frames the allowed page. | `refused` with reason `domain`. The page fields and the framed A fields stay empty. | E2E E9 |
