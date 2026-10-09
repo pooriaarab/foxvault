@@ -21,6 +21,9 @@ plain TypeScript. It runs in Node 24+ and in a Firefox extension.
 npm i foxvault
 ```
 
+Install the add-on from AMO: [addons.mozilla.org/firefox/addon/foxvault-agent-secrets](https://addons.mozilla.org/firefox/addon/foxvault-agent-secrets/)
+(pending AMO review; the link works after approval).
+
 ## Example
 
 ```js
@@ -235,9 +238,10 @@ pnpm e2e           # loads the demo in Firefox and checks every E2E failure mode
   between.
 - Use one vault object for each store, in the background page. Two vault
   objects on the same storage do not see each other's changes in memory.
-- The default MV3 extension CSP upgrades `http:` requests to `https:`, except
-  for loopback names such as `127.0.0.1` and `*.localhost`. So the demo works
-  with plain `http:` on those names only.
+- The add-on can reach only `http://127.0.0.1` and `http://localhost`. The
+  default MV3 extension CSP upgrades other `http:` requests to `https:`. The
+  E2E build (`build-ext.mjs --e2e`) also adds `http://*.localhost/*`, because
+  the test uses two host names.
 - There is no import, export, or backup of the vault.
 
 ## Part of the fox primitives
