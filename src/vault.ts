@@ -120,18 +120,27 @@ export function createVault(options: VaultOptions = {}) {
     return (latest = Math.max(latest, t));
   }
 
-  function lock(): void {
+  // Drop the open state. The timer and the clock check use this.
+  function drop(): void {
     open = undefined;
     clearTimeout(timer);
   }
 
+  // Each call to lock() counts one. An unlock that started before it must not open (L7).
+  let epoch = 0;
+  function lock(): void {
+    epoch++;
+    drop();
+  }
+
   // Keys and values live in memory only, so a new vault object starts locked (L2).
-  function opened(key: CryptoKey, values: Open["values"]): Open {
-    lock();
+  function opened(key: CryptoKey, values: Open["values"], since: number): Open {
+    if (epoch !== since) throw new VaultError("locked", "lock() ran while the vault was unlocking.");
+    drop();
     const at = clock();
     open = { key, values, lockAt: at + autoLockMs };
     // The timer only drops memory early. Every operation checks the clock itself (L1).
-    timer = setTimeout(lock, autoLockMs);
+    timer = setTimeout(drop, autoLockMs);
     (timer as { unref?: () => void }).unref?.();
     return open;
   }
@@ -139,7 +148,7 @@ export function createVault(options: VaultOptions = {}) {
   // The open state, or undefined after the lock time.
   function current(): Open | undefined {
     const t = clock();
-    if (open && !(t < open.lockAt)) lock();
+    if (open && !(t < open.lockAt)) drop();
     return open;
   }
 
@@ -172,6 +181,7 @@ export function createVault(options: VaultOptions = {}) {
   }
 
   async function unlockWith(record: VaultRecord, passphrase?: string): Promise<Open> {
+    const since = epoch;
     let key: CryptoKey | undefined;
     if (record.mode === "passphrase") {
       if (typeof passphrase !== "string") throw new VaultError("locked", "The vault is locked. Unlock it with the passphrase.");
@@ -191,7 +201,7 @@ export function createVault(options: VaultOptions = {}) {
       });
       values.set(name, { value, info: { handle: `vault:${name}`, domains: [...secret.domains], createdAt: secret.createdAt } });
     }
-    return opened(key, values);
+    return opened(key, values, since);
   }
 
   // Device mode unlocks by itself: it has no passphrase to ask for.
@@ -219,6 +229,7 @@ export function createVault(options: VaultOptions = {}) {
     /** Make the vault key. With a passphrase: PBKDF2. Without: a device key in the key store. */
     initialize: (init: { passphrase?: string } = {}) =>
       serial(async () => {
+        const since = epoch;
         if (await read()) throw new VaultError("already-initialized", "The vault already has a key.");
         let key: CryptoKey;
         let kdf: VaultRecord["kdf"];
@@ -238,13 +249,14 @@ export function createVault(options: VaultOptions = {}) {
         const record: VaultRecord = { version: 1, mode: kdf ? "passphrase" : "device", check: await seal(key, CHECK, CHECK), secrets: {}, rules: {} };
         if (kdf) record.kdf = kdf;
         await store.set(RECORD, record);
-        opened(key, new Map());
+        // After a lock() during initialize, the vault exists and stays locked.
+        if (epoch === since) opened(key, new Map(), since);
       }),
 
     /** Decrypt every secret into memory. Device mode needs no passphrase. */
     unlock: (passphrase?: string) =>
       serial(async () => {
-        lock();
+        drop();
         await unlockWith(await readInitialized(), passphrase);
       }),
 

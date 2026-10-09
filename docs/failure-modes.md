@@ -37,6 +37,7 @@ with `pnpm e2e`.
 | L4 | An error message holds the value: from bad input, or from the function in `use`. | foxvault errors never hold a value. When the `use` function throws, foxvault throws `use-failed` and drops the original message and cause. | `lock.test.ts` L4 |
 | L5 | `lock` leaves values in memory. | After `lock`, `use` throws `locked` in passphrase mode. `list` still shows handles and domains, but no values. | `lock.test.ts` L5 |
 | L6 | A release is not recorded, or the event holds the value. | Each release calls `onEvent` with the handle and the kind, and no value. When `onEvent` throws, foxvault does not release the value. | `lock.test.ts` L6 |
+| L7 | `lock` runs while an unlock is still deriving the key, and the unlock then opens the vault anyway. | `lock` wins. The unlock that was running throws `locked`, and `status` stays `locked`. | `lock.test.ts` L7 |
 
 ## Redact (R)
 
