@@ -1,0 +1,29 @@
+{
+  "default_locale": "en-US",
+  "slug": "foxvault-agent-secrets",
+  "name": {
+    "en-US": "foxvault — keep secrets out of AI prompts"
+  },
+  "summary": {
+    "en-US": "Store an API key or a card number encrypted in your browser and use it by a handle such as vault:api-key. The value goes into a request header or a form field, and never into the text that an AI model reads."
+  },
+  "description": {
+    "en-US": "foxvault is the reference add-on for the foxvault library. It shows how an AI agent can use a secret without seeing it.\n\n**Who it is for:** developers who build AI agents or extensions, and want to keep API keys and card numbers out of the model's context and logs.\n\n**What it does**\n\n- Stores a secret with AES-GCM encryption. The key stays in your browser's IndexedDB.\n- Gives each secret a handle, for example `vault:api-key`, and a list of allowed hosts.\n- Adds the secret to a request header (for example `Authorization: Bearer ...`) only for requests to an allowed host.\n- Fills a form field in the active tab with a secret, after a foxgate policy check. The host must be in the secret's allowed hosts.\n- Redacts a prompt: it puts the handle where a stored value shows up in text.\n- Lists each time a secret was used.\n\n**Scope of this version:** the add-on works only with servers on your own computer (127.0.0.1 and localhost). To try the header path, run the small echo server from the foxvault repository. It returns a hash of the header, never the header.\n\n**What leaves your computer:** nothing. The add-on sends a secret only in a request to a host that you allowed, and its host permissions limit those hosts to your own computer. It has no server and no analytics.\n\n**Permissions**\n\n- Access to 127.0.0.1 and localhost, web requests and blocking: add the header to requests to an allowed host on your computer.\n- Scripting and web navigation: fill one field in the active tab when you click Fill.\n- Public suffix list: compare a page's site with the allowed hosts.\n- Storage: keep the encrypted secrets and the policy in your browser.\n\nThe source code is MIT licensed."
+  },
+  "categories": {
+    "firefox": [
+      "privacy-security",
+      "web-development"
+    ]
+  },
+  "homepage": {
+    "en-US": "https://github.com/pooriaarab/foxvault"
+  },
+  "support_url": {
+    "en-US": "https://github.com/pooriaarab/foxvault/issues"
+  },
+  "version": {
+    "license": "MIT",
+    "approval_notes": "The uploaded source.zip is the git tree of this release. To build: install Node 24 and pnpm 11 (corepack enable), run `pnpm install --frozen-lockfile`, then `pnpm build:ext`. The output is dist-ext/. esbuild bundles extension/*.js with src/ and the foxgate npm package; the other files are copied unmodified. To try it: run `node e2e/echo.mjs` from the source (an echo server on http://127.0.0.1:8787). In the popup, add a secret with allowed host 127.0.0.1, then press Call: the result shows a hash of the Authorization header. Open http://127.0.0.1:8787/form.html and press Fill to fill #card. No account is needed."
+  }
+}
