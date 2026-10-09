@@ -102,6 +102,7 @@ each call. The E2E test checks F1, F4, and F6 in a real Firefox.
 | F12 | A refused fill puts a bad handle (which can be anything the planner wrote) into the event. | When the handle is not valid, the event has an empty handle. | `fill.test.ts` F12 |
 | F13 | `fill` sends a card number to a page that came over plain `http:`. | An `http:` page gets `refused: http`, unless the secret was stored with `allowHttp: true`. `allowHttp` is bound to the ciphertext like the domains. | `fill.test.ts` F13 |
 | F14 | A locked passphrase vault throws after foxgate used up the approval token. | `fill` returns `refused: locked`. | `fill.test.ts` F14 |
+| F15 | A caller (for example foxpay) checked one exact document, then the tab goes to another page on a host that the secret allows, and fill writes the value there. | `fill` takes an optional `documentId`. It must be the current top document of the tab, and the script runs only in that document. Otherwise `refused: page-changed`. The page function still checks the host. | `fill.test.ts` F15 |
 
 ## Firefox key store (K)
 
