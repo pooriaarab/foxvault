@@ -1,6 +1,6 @@
 // The E2E test: install the built demo extension (dist-ext/) in a real
 // Firefox, drive its popup, and write artifacts/e2e-<date>.json. It checks
-// failure modes K1-K3 and E1-E6 in docs/failure-modes.md.
+// failure modes K1-K3 and E1-E9 in docs/failure-modes.md.
 // Usage: pnpm e2e [--headed]. Env: FIREFOX (the Firefox binary).
 //
 // The hosts are api.localhost (A) and other.localhost (B). Firefox sends
@@ -13,10 +13,11 @@ import { startEcho } from "./echo.mjs";
 
 const VALUE = "sk-fvt-e2e-7f3a9c1b5d2e8f4a6b0c";
 const HANDLE = "vault:test-key";
+const CARD = "4242424242424242";
 const record = { startedAt: new Date().toISOString(), checks: [] };
 const check = (name, expected, actual) => record.checks.push({ name, expected, actual, ok: JSON.stringify(actual) === JSON.stringify(expected) });
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
-const forms = [VALUE, Buffer.from(VALUE).toString("base64"), Buffer.from(VALUE).toString("hex")];
+const forms = [VALUE, Buffer.from(VALUE).toString("base64"), Buffer.from(VALUE).toString("hex"), CARD];
 
 // Click a button, wait until the output counts one more answer, and return it.
 async function press(page, button, output) {
@@ -39,6 +40,14 @@ const hashAt = (echo, id) => (entry(echo, id) ? entry(echo, id).sha256 : "missin
 const waitFor = async (fn) => {
   for (let i = 0; i < 100 && !fn(); i++) await new Promise((r) => setTimeout(r, 100));
   return fn();
+};
+
+const value = (frame, selector) => frame.evaluate((s) => document.querySelector(s).value, selector);
+// The loaded iframe whose host is `host`.
+const frameOf = async (page, host) => {
+  const frame = await waitFor(() => page.frames().find((f) => f.url().startsWith(`http://${host}:`)));
+  await poll(frame, () => document.readyState === "complete" && document.querySelector("#card") !== null);
+  return frame;
 };
 
 const a = await startEcho();
@@ -87,10 +96,37 @@ try {
   check("E5: redact leaves no form of the value", false, forms.some((f) => redacted.includes(f)) || redacted.includes(VALUE.slice(11)));
   check("E5: redact puts the handle in 3 places", 3, redacted.split(HANDLE).length - 1);
 
+  // Fill: a card number for A only, through foxgate.
+  const add = (message) => popup.evaluate((m) => browser.runtime.sendMessage({ type: "add", ...m }), message);
+  check("fill: the card secret is added", "added vault:card", await add({ handle: "vault:card", value: CARD, hosts: "api.localhost", header: "" }));
+  const fill = async (url, selector) => {
+    const page = await fox.open(url);
+    const tabId = await popup.evaluate((u) => browser.tabs.query({ url: u }).then((tabs) => tabs.at(-1).id), url.replace(/:\d+\/.*$/, "/*"));
+    const result = await popup.evaluate((m) => browser.runtime.sendMessage({ type: "fill", ...m }), { handle: "vault:card", tabId, selector });
+    return { page, result };
+  };
+
+  const onA = await fill(`${A}/form.html?frame=${encodeURIComponent(`${B}/frame.html`)}`, "#card");
+  check("E7: fill on A works", { status: "filled", host: "api.localhost" }, onA.result);
+  check("E7: the card field on A holds the value", CARD, await value(onA.page, "#card"));
+  check("E8: the cross-origin iframe card field stays empty", "", await value(await frameOf(onA.page, "other.localhost"), "#card"));
+  const frameOnly = await popup.evaluate((m) => browser.runtime.sendMessage({ type: "fill", ...m }), { handle: "vault:card", tabId: await popup.evaluate(() => browser.tabs.query({ url: "http://api.localhost/*" }).then((t) => t.at(-1).id)), selector: "#frame-only" });
+  check("E8: a field only in the iframe is not found", { status: "refused", reason: "not-found" }, frameOnly);
+  check("E8: the iframe-only field stays empty", "", await value(await frameOf(onA.page, "other.localhost"), "#frame-only"));
+  await onA.page.close();
+
+  const onB = await fill(`${B}/form.html?frame=${encodeURIComponent(`${A}/frame.html`)}`, "#card");
+  check("E9: fill on B is refused", { status: "refused", reason: "domain" }, onB.result);
+  check("E9: the card field on B stays empty", "", await value(onB.page, "#card"));
+  check("E9: the framed A field inside B stays empty", "", await value(await frameOf(onB.page, "api.localhost"), "#card"));
+  await onB.page.close();
+
   const state = await popup.evaluate(() => browser.runtime.sendMessage({ type: "state" }));
   const hosts = [...new Set(state.events.filter((e) => e.kind === "header").map((e) => e.host))];
   check("E6: header releases name only A", ["api.localhost"], hosts);
   check("E6: no event holds the value", false, forms.some((f) => JSON.stringify(state.events).includes(f)));
+  const fills = state.events.filter((e) => e.kind === "fill").map((e) => `${e.type} ${e.host ?? ""} ${e.reason ?? ""}`.trim());
+  check("E7-E9: fill events name each release and refusal", ["refuse other.localhost domain", "refuse api.localhost not-found", "release api.localhost", "release api.localhost"], fills);
 
   const key = await popup.evaluate(() => browser.runtime.sendMessage({ type: "key-check" }));
   check("K1: a new vault object unlocks with the key from IndexedDB", true, key.reopened);
@@ -109,7 +145,7 @@ try {
   await a.close();
   await b.close();
 }
-record.passed = !record.error && record.checks.length >= 17 && record.checks.every((c) => c.ok);
+record.passed = !record.error && record.checks.length >= 27 && record.checks.every((c) => c.ok);
 const path = writeArtifact("artifacts", "e2e", record);
 for (const c of record.checks) console.log(`${c.ok ? "ok " : "BAD"} ${c.name}: ${JSON.stringify(c.actual)}`);
 console.log(`${record.passed ? "PASS" : "FAIL"}${record.error ? `: ${record.error}` : ""} | ${path}`);
