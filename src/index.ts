@@ -1,2 +1,3 @@
-// The public API of foxvault. Replace this export with the real one.
-export const name = "foxvault";
+export { VaultError, type VaultErrorCode } from "./errors.js";
+export { memoryKeyStore, type KeyStore } from "./keystore.js";
+export { createVault, handleName, type SecretInfo, type Vault, type VaultOptions } from "./vault.js";
