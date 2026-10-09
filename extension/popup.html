@@ -3,12 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <title>foxvault demo</title>
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>foxvault</h1>
-    <p>Keep API keys and card numbers encrypted and out of the AI model's context.</p>
-    <!-- Show foxvault working here. The E2E test reads #value. -->
-    <p>Status: <output id="value"></output></p>
+    <h1>foxvault demo</h1>
+    <section>
+      <h2>Add a secret</h2>
+      <label>Handle <input id="handle" value="vault:test-key" /></label>
+      <label>Value <input id="value" type="password" autocomplete="off" /></label>
+      <label>Allowed hosts <input id="hosts" value="127.0.0.1" /></label>
+      <label>Header <input id="header" value="Authorization" /></label>
+      <label>Format <input id="format" value="Bearer {secret}" /></label>
+      <label class="row"><input id="allow-http" type="checkbox" checked /> Allow http (local test servers only)</label>
+      <button id="add">Add</button> <output id="add-result"></output>
+      <ul id="secrets"></ul>
+    </section>
+    <section>
+      <h2>Call the test API</h2>
+      <p>Start it with <code>node e2e/echo.mjs</code>. It returns a hash of the header, not the header.</p>
+      <label>URL <input id="url" value="http://127.0.0.1:8787/echo" /></label>
+      <button id="call">Call</button>
+      <pre id="call-result"></pre>
+    </section>
+    <section>
+      <h2>Redact playground</h2>
+      <textarea id="prompt" rows="3" placeholder="Paste a prompt that holds a secret"></textarea>
+      <button id="redact">Redact</button>
+      <pre id="redacted"></pre>
+    </section>
+    <section>
+      <h2>Releases</h2>
+      <ol id="events"></ol>
+    </section>
     <script src="popup.js"></script>
   </body>
 </html>

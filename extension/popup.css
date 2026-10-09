@@ -1,0 +1,11 @@
+body { font: 14px/1.4 system-ui, sans-serif; margin: 12px; width: 420px; color: #1b1b1f; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+h2 { font-size: 14px; margin: 12px 0 4px; }
+section { border-top: 1px solid #ddd; padding-bottom: 6px; }
+label { display: block; margin: 4px 0; font-size: 12px; color: #444; }
+label input:not([type="checkbox"]), textarea { display: block; width: 100%; box-sizing: border-box; padding: 4px; font: inherit; }
+button { margin: 4px 4px 2px 0; padding: 4px 10px; }
+output { font-weight: 600; }
+pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f6; padding: 6px; margin: 4px 0; font-size: 12px; min-height: 1em; }
+#secrets, #events { padding-left: 20px; font-size: 12px; }
+code { background: #f4f4f6; padding: 0 3px; }

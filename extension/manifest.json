@@ -12,18 +12,13 @@
       }
     }
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "publicSuffix", "webRequest", "webRequestBlocking"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "http://*.localhost/*"],
   "background": {
     "scripts": ["background.js"]
   },
   "action": {
     "default_title": "foxvault demo",
     "default_popup": "popup.html"
-  },
-  "content_scripts": [
-    {
-      "matches": ["http://127.0.0.1/*"],
-      "js": ["content.js"]
-    }
-  ]
+  }
 }
