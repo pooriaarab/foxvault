@@ -153,7 +153,7 @@ describe("lock and release", () => {
     vault.lock();
     expect(await code(vault.use("vault:k", (v) => v))).toBe("locked");
     const list = await vault.list();
-    expect(list).toEqual([{ handle: "vault:k", domains: ["a.example"], createdAt: expect.any(Number) }]);
+    expect(list).toEqual([{ handle: "vault:k", domains: ["a.example"], allowHttp: false, createdAt: expect.any(Number) }]);
     expect(JSON.stringify(list)).not.toContain(VALUE);
   });
 

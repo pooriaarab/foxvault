@@ -79,8 +79,9 @@ flowchart TD
    and a random 16-byte salt. 600,000 is the OWASP minimum for
    PBKDF2-SHA-256. foxvault refuses fewer iterations and passphrases under 12
    characters. The key stays in memory only, until the vault locks.
-3. Each secret is one ciphertext. Its handle and its allowed domains are
-   bound to it as additional data, so a changed domain list fails to decrypt.
+3. Each secret is one ciphertext. Its handle, its allowed domains, and its
+   `allowHttp` setting are bound to it as additional data, so a changed
+   domain list fails to decrypt.
 4. The vault locks `autoLockMs` after unlock. Every operation checks the
    clock, so a suspended timer cannot keep it open. When the event page
    unloads, the memory is gone, so the vault is locked.
@@ -132,9 +133,9 @@ the planner only handles.
 | `unlock(passphrase?)` | Decrypts every secret into memory. Device mode unlocks by itself when needed. |
 | `lock()` | Drops the key and the values from memory. |
 | `status()` | `"new"`, `"locked"`, or `"unlocked"`. |
-| `set(handle, value, { domains })` | Stores a new secret. A handle is `vault:` plus 1-64 of `a-z 0-9 . _ -`. A value has 8 to 4096 characters. |
+| `set(handle, value, { domains, allowHttp? })` | Stores a new secret. A handle is `vault:` plus 1-64 of `a-z 0-9 . _ -`. A value has 8 to 4096 characters. `allowHttp: true` lets `fill` write it into a plain `http:` page. |
 | `remove(handle)` | Deletes the secret and its header rules. |
-| `list()` | Handles, domains, and creation times. No values. It works while locked. |
+| `list()` | Handles, domains, `allowHttp`, and creation times. No values. It works while locked. |
 | `redact(text)` | Replaces each value and its usual encodings with its handle. Throws `locked` rather than skip a value. |
 | `use(handle, fn)` | Calls `fn(value, info)` and returns its result. If `fn` throws, foxvault throws `use-failed` with no message from `fn`. |
 | `injectHeader({ handle, header, hosts, format?, allowHttp? })` | Stores a header rule. `format` holds `{secret}` one time, for example `Bearer {secret}`. `http:` needs `allowHttp: true`. |
@@ -142,8 +143,8 @@ the planner only handles.
 | `headersFor(details, extensionOrigin)` | The body of a blocking `onBeforeSendHeaders` listener. It never throws. |
 | `fill({ handle, tabId, selector, token? })` | Fills an input or textarea in the top document of the tab. Returns `{ status: "filled", host }`, `{ status: "ask", requestId }`, or `{ status: "refused", reason }`. |
 
-Fill reasons: `bad-input`, `no-gate`, `no-browser`, `no-tab`, `domain`,
-`not-found`, `frame-changed`, `host-changed`, `not-a-field`, `hook-failed`,
+Fill reasons: `bad-input`, `no-gate`, `no-browser`, `no-tab`, `domain`, `http`,
+`locked`, `not-found`, `frame-changed`, `host-changed`, `not-a-field`, `hook-failed`,
 and every foxgate deny reason, for example `no-grant` or `action-changed`.
 
 ### Other exports

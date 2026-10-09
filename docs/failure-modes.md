@@ -92,6 +92,10 @@ each call. The E2E test checks F1, F4, and F6 in a real Firefox.
 | F8 | No gate is set, so fills run with no policy. | `refused` with reason `no-gate`. | `fill.test.ts` F8 |
 | F9 | The tab shows a page that is not `http:` or `https:` (for example `about:` or `file:`). | `refused` with reason `domain`. | `fill.test.ts` F9 |
 | F10 | The planner sends a bad tab ID or selector. | `refused` with reason `bad-input`. | `fill.test.ts` F10 |
+| F11 | The secret changes while foxgate decides (for example, it is removed and added again for another host). The released value was never checked against the page host. | foxvault reads the domains and the value in one step after the decision, and checks the host again. A host that no longer matches gets `refused: domain`. | `fill.test.ts` F11 |
+| F12 | A refused fill puts a bad handle (which can be anything the planner wrote) into the event. | When the handle is not valid, the event has an empty handle. | `fill.test.ts` F12 |
+| F13 | `fill` sends a card number to a page that came over plain `http:`. | An `http:` page gets `refused: http`, unless the secret was stored with `allowHttp: true`. `allowHttp` is bound to the ciphertext like the domains. | `fill.test.ts` F13 |
+| F14 | A locked passphrase vault throws after foxgate used up the approval token. | `fill` returns `refused: locked`. | `fill.test.ts` F14 |
 
 ## Firefox key store (K)
 
