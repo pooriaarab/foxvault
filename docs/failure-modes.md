@@ -54,6 +54,11 @@ with `pnpm e2e`.
 | R9 | A value has regular expression characters, so `redact` matches other text or crashes. | Each character is escaped. `a.b.c.d.e` does not match `aXbXcXdXe`. | `redact.test.ts` R9 |
 | R10 | A long text makes `redact` slow (catastrophic backtracking). | 1 MB of text with 20 secrets takes under 2 seconds. | `redact.test.ts` R10 |
 | R11 | `redact` gets something that is not a string and returns it unchanged. | It throws `bad-value`. | `redact.test.ts` R11 |
+| R12 | The value is written with JSON `\uXXXX` escapes, for all characters or only some, in either letter case. | Each character can be plain or a `\uXXXX` escape. | `redact.test.ts` R12 |
+| R13 | The value is percent-encoded for every character, or encoded two times (`%2540`). | Each character can be plain, `%XX`, or `%25XX`, in either letter case. | `redact.test.ts` R13 |
+| R14 | The base64 of the value is wrapped inside a JSON string, so the line breaks are the two characters `\n`. | Base64 and hex forms allow whitespace and literal `\n` or `\r` between characters. | `redact.test.ts` R14 |
+| R15 | The value is in HTML with entities: `&amp;`, `&lt;`, `&quot;`, or numeric `&#NN;` and `&#xHH;`. | Each character can be plain or an entity. | `redact.test.ts` R15 |
+| R16 | The value is stored in one Unicode form (NFC) and the text has the other (NFD), or the reverse. | redact looks for the stored, NFC, and NFD forms of each value. | `redact.test.ts` R16 |
 
 ## Header injection (H)
 

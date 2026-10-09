@@ -1,4 +1,4 @@
-// Failure modes R1-R11 in docs/failure-modes.md.
+// Failure modes R1-R16 in docs/failure-modes.md.
 import { describe, expect, it } from "vitest";
 import { createVault, VaultError } from "../src/index.js";
 
@@ -11,6 +11,8 @@ async function vaultWith(secrets: Record<string, string>) {
   return vault;
 }
 
+// One character as a JSON \\u escape.
+const u = (c: string) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`;
 const b64 = (bytes: Uint8Array | string) => Buffer.from(bytes).toString("base64");
 
 describe("redact", () => {
@@ -102,5 +104,46 @@ describe("redact", () => {
       expect(error).toBeInstanceOf(VaultError);
       expect((error as VaultError).code).toBe("bad-value");
     }
+  });
+
+  it("R12: JSON \\u escapes match, for all or some characters", async () => {
+    const vault = await vaultWith({ "vault:k": VALUE });
+    const all = [...VALUE].map(u).join("");
+    const some = [...VALUE].map((c, i) => (i % 3 === 0 ? u(c) : c)).join("");
+    for (const form of [all, all.toUpperCase().replace(/\\U/g, "\\u"), some]) {
+      expect(await vault.redact(`{"key":"${form}"}`), form).toBe('{"key":"vault:k"}');
+    }
+  });
+
+  it("R13: full and double percent-encoding match", async () => {
+    const value = "p@ss/w0rd+key=1 x&y";
+    const vault = await vaultWith({ "vault:p": value });
+    const full = [...Buffer.from(value)].map((b) => `%${b.toString(16).toUpperCase().padStart(2, "0")}`).join("");
+    for (const form of [full, full.toLowerCase(), encodeURIComponent(encodeURIComponent(value))]) {
+      expect(await vault.redact(`?q=${form}&n=1`), form).toBe("?q=vault:p&n=1");
+    }
+  });
+
+  it("R14: base64 wrapped with literal \\n inside JSON matches", async () => {
+    const vault = await vaultWith({ "vault:k": VALUE });
+    const std = Buffer.from(VALUE).toString("base64");
+    const json = JSON.stringify({ pem: `${std.slice(0, 12)}\n${std.slice(12, 24)}\r\n${std.slice(24)}` });
+    expect(await vault.redact(json)).toBe('{"pem":"vault:k"}');
+  });
+
+  it("R15: HTML entities match", async () => {
+    const value = 'a&b<c>d"e\'f-12345';
+    const vault = await vaultWith({ "vault:h": value });
+    const named = value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    const numeric = [...value].map((c, i) => (i % 2 ? `&#${c.codePointAt(0)};` : `&#x${c.codePointAt(0)!.toString(16)};`)).join("");
+    for (const form of [named, numeric]) expect(await vault.redact(`<input value="${form}">`), form).toBe('<input value="vault:h">');
+  });
+
+  it("R16: NFC and NFD forms of a value both match", async () => {
+    const nfc = "pässwörd-ünïcode-1".normalize("NFC");
+    const nfd = "kéy-çafé-secret-2".normalize("NFD");
+    const vault = await vaultWith({ "vault:c": nfc, "vault:d": nfd });
+    expect(await vault.redact(`x ${nfc.normalize("NFD")} y`)).toBe("x vault:c y");
+    expect(await vault.redact(`x ${nfd.normalize("NFC")} y`)).toBe("x vault:d y");
   });
 });

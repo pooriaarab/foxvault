@@ -94,7 +94,7 @@ sequenceDiagram
   participant V as vault
   participant M as AI model or log
   App->>V: redact(prompt)
-  V->>V: find each value: plain, split by spaces or lines, base64 at 3 offsets, URL, hex, JSON
+  V->>V: find each value: plain, split, base64 at 3 offsets, hex, URL, JSON, HTML, NFC or NFD
   V-->>App: prompt with vault:handle in place of each value
   App->>M: redacted prompt
   Note over V: Locked passphrase vault: redact throws "locked" and returns no text
@@ -226,9 +226,13 @@ pnpm e2e           # loads the demo in Firefox and checks every E2E failure mode
   cannot be filled.
 - Header rules match host names, not ports. Any port on an allowed host gets
   the header.
-- `redact` finds values of 8 characters or more, in the forms listed above.
-  It does not find a value that changed letter case, was encrypted, or was
-  cut into parts with other text in between.
+- `redact` finds values of 8 characters or more. Each character can be
+  plain, a JSON `\uXXXX` escape, `%XX` or `%25XX`, or an HTML entity, with
+  whitespace or dashes between characters. It also finds base64 and hex, and
+  the NFC and NFD forms of the value. It does not find a value that changed
+  letter case, was encrypted, was encoded in another way (for example
+  base64 of a URL-encoded value), or was cut into parts with other text in
+  between.
 - Use one vault object for each store, in the background page. Two vault
   objects on the same storage do not see each other's changes in memory.
 - The default MV3 extension CSP upgrades `http:` requests to `https:`, except

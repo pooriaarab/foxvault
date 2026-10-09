@@ -22,24 +22,40 @@ function base64Cores(bytes: Uint8Array): string[] {
   return cores;
 }
 
+// A hex digit pattern that takes either letter case.
+const hexAnyCase = (hex: string) => hex.replace(/[a-f]/gi, (d) => `[${d.toLowerCase()}${d.toUpperCase()}]`);
+const NAMED: Record<string, string[]> = { "&": ["amp"], "<": ["lt"], ">": ["gt"], '"': ["quot"], "'": ["apos"] };
+const JSON_ESCAPES: Record<string, string> = { '"': '\\"', "\\": "\\\\", "/": "\\/", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+
+// One character of the value, plain or in any encoding that a log or a page
+// can give it: JSON \uXXXX, %XX and %25XX, HTML entities (R12, R13, R15).
+function charPattern(ch: string): string {
+  const cp = ch.codePointAt(0)!;
+  const alts = [escape(ch)];
+  alts.push([...Array(ch.length).keys()].map((i) => `\\\\u${hexAnyCase(ch.charCodeAt(i).toString(16).padStart(4, "0"))}`).join(""));
+  const bytes = [...encoder.encode(ch)].map((b) => hexAnyCase(b.toString(16).padStart(2, "0")));
+  alts.push(bytes.map((b) => `%${b}`).join(""), bytes.map((b) => `%25${b}`).join(""));
+  alts.push(`&#0*${cp};`, `&#[xX]0*${hexAnyCase(cp.toString(16))};`, ...(NAMED[ch] ?? []).map((n) => `&${n};`));
+  if (JSON_ESCAPES[ch]) alts.push(escape(JSON_ESCAPES[ch]));
+  if (ch === " ") alts.push("\\+");
+  return `(?:${alts.join("|")})`;
+}
+
+// Whitespace, or the two characters \n or \r that JSON writes for a line break (R14).
+const WRAP = "(?:\\s|\\\\[nr])*";
+
 /** Every form of one value that redact looks for, as regular expression sources. */
 export function formsOf(value: string): { source: string; length: number }[] {
-  const bytes = encoder.encode(value);
-  const std = toBase64(bytes);
-  const url = encodeURIComponent(value);
-  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const base64 = [std, std.replace(/=+$/, ""), ...base64Cores(bytes)].flatMap((f) => [f, f.replace(/\+/g, "-").replace(/\//g, "_")]);
-  const encoded = [
-    url,
-    url.replace(/%20/g, "+"),
-    url.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase()),
-    hex,
-    hex.toUpperCase(),
-    JSON.stringify(value).slice(1, -1),
-    ...base64,
-  ];
-  const forms = new Map<string, number>([[spaced(value, "[\\s-]*"), value.length]]);
-  for (const form of encoded) if (form.length >= 8 && form !== value) forms.set(spaced(form, "\\s*"), form.length);
+  const forms = new Map<string, number>();
+  // The stored, NFC, and NFD forms, so a text in the other Unicode form still matches (R16).
+  for (const variant of new Set([value, value.normalize("NFC"), value.normalize("NFD")])) {
+    const bytes = encoder.encode(variant);
+    const std = toBase64(bytes);
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const base64 = [std, std.replace(/=+$/, ""), ...base64Cores(bytes)].flatMap((f) => [f, f.replace(/\+/g, "-").replace(/\//g, "_")]);
+    forms.set([...variant].map(charPattern).join("[\\s-]*"), variant.length);
+    for (const form of [hex, hex.toUpperCase(), ...base64]) if (form.length >= 8) forms.set(spaced(form, WRAP), form.length);
+  }
   return [...forms].map(([source, length]) => ({ source, length }));
 }
 
