@@ -51,11 +51,14 @@ export interface VaultEvent {
 export interface SecretInfo {
   handle: string;
   domains: string[];
+  /** fill may write it into a plain http page. */
+  allowHttp: boolean;
   createdAt: number;
 }
 
 interface StoredSecret extends Sealed {
   domains: string[];
+  allowHttp: boolean;
   createdAt: number;
 }
 interface VaultRecord {
@@ -88,7 +91,7 @@ function parseRecord(raw: unknown): VaultRecord | undefined {
     if (!ok) throw corrupt("a header rule has the wrong shape");
   }
   for (const s of Object.values(secrets)) {
-    const ok = isSealed(s) && Array.isArray((s as StoredSecret).domains) && typeof (s as StoredSecret).createdAt === "number";
+    const ok = isSealed(s) && Array.isArray((s as StoredSecret).domains) && typeof (s as StoredSecret).allowHttp === "boolean" && typeof (s as StoredSecret).createdAt === "number";
     if (!ok) throw corrupt("a secret has the wrong shape");
   }
   return raw as unknown as VaultRecord;
@@ -101,8 +104,8 @@ export function handleName(handle: unknown): string {
   return match[1];
 }
 
-/** Additional data for AES-GCM: the ciphertext only opens for this handle and these domains. */
-const aadOf = (name: string, domains: string[]) => canonicalJson({ domains, handle: `vault:${name}` });
+/** Additional data for AES-GCM: the ciphertext only opens for this handle, these domains, and this http setting. */
+const aadOf = (name: string, s: { domains: string[]; allowHttp: boolean }) => canonicalJson({ allowHttp: s.allowHttp, domains: s.domains, handle: `vault:${name}` });
 
 export function createVault(options: VaultOptions = {}) {
   const store = options.store ?? memoryStore();
@@ -196,10 +199,11 @@ export function createVault(options: VaultOptions = {}) {
     });
     const values: Open["values"] = new Map();
     for (const [name, secret] of Object.entries(record.secrets)) {
-      const value = await unseal(key, secret, aadOf(name, secret.domains)).catch(() => {
+      const value = await unseal(key, secret, aadOf(name, secret)).catch(() => {
         throw corrupt(`vault:${name} does not decrypt`);
       });
-      values.set(name, { value, info: { handle: `vault:${name}`, domains: [...secret.domains], createdAt: secret.createdAt } });
+      const info = { handle: `vault:${name}`, domains: [...secret.domains], allowHttp: secret.allowHttp, createdAt: secret.createdAt };
+      values.set(name, { value, info });
     }
     return opened(key, values, since);
   }
@@ -264,7 +268,7 @@ export function createVault(options: VaultOptions = {}) {
     lock,
 
     /** Store a new secret. Its handle and domains are bound to the ciphertext. */
-    set: (handle: string, value: string, settings: { domains: string[] }) =>
+    set: (handle: string, value: string, settings: { domains: string[]; allowHttp?: boolean }) =>
       serial(async (): Promise<SecretInfo> => {
         const name = handleName(handle);
         if (typeof value !== "string" || value.length < 8 || value.length > 4096) {
@@ -274,8 +278,9 @@ export function createVault(options: VaultOptions = {}) {
         const record = await readInitialized();
         const state = await ensureOpen(record);
         if (record.secrets[name]) throw new VaultError("exists", `vault:${name} exists. Remove it first.`);
-        const info = { handle: `vault:${name}`, domains, createdAt: Date.now() };
-        record.secrets[name] = { ...(await seal(state.key, value, aadOf(name, domains))), domains, createdAt: info.createdAt };
+        const allowHttp = settings.allowHttp === true;
+        const info = { handle: `vault:${name}`, domains, allowHttp, createdAt: Date.now() };
+        record.secrets[name] = { ...(await seal(state.key, value, aadOf(name, info))), domains, allowHttp, createdAt: info.createdAt };
         await store.set(RECORD, record);
         state.values.set(name, { value, info });
         return { ...info, domains: [...domains] };
@@ -300,7 +305,7 @@ export function createVault(options: VaultOptions = {}) {
       serial(async (): Promise<SecretInfo[]> => {
         const record = await readInitialized();
         return Object.entries(record.secrets)
-          .map(([name, s]) => ({ handle: `vault:${name}`, domains: [...s.domains], createdAt: s.createdAt }))
+          .map(([name, s]) => ({ handle: `vault:${name}`, domains: [...s.domains], allowHttp: s.allowHttp, createdAt: s.createdAt }))
           .toSorted((a, b) => a.handle.localeCompare(b.handle));
       }),
 
@@ -368,12 +373,12 @@ export function createVault(options: VaultOptions = {}) {
           gate: options.gate,
           browser: options.browser,
           validHandle: (handle) => HANDLE.test(String(handle)),
-          domains: (handle) => serial(async () => (await readInitialized()).secrets[handleName(handle)]?.domains),
-          value: (handle) =>
+          settings: (handle) => serial(async () => (await readInitialized()).secrets[handleName(handle)]),
+          // One step: the value and the domains that its ciphertext was bound to (F11).
+          release: (handle) =>
             serial(async () => {
               const found = (await ensureOpen(await readInitialized())).values.get(handleName(handle));
-              if (!found) throw new VaultError("not-found", `${handle} does not exist.`);
-              return found.value;
+              return found && { value: found.value, domains: found.info.domains, allowHttp: found.info.allowHttp };
             }),
           emit: async (type, handle, host, reason) => {
             await options.onEvent?.({ type, kind: "fill", handle, at: clock(), ...(host && { host }), ...(reason && { reason }) });

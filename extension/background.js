@@ -32,7 +32,7 @@ const split = (text) => String(text ?? "").split(/[\s,]+/).filter(Boolean);
 const handlers = {
   async add({ handle, value, hosts, header, format, allowHttp }) {
     const domains = split(hosts);
-    await vault.set(handle, value, { domains });
+    await vault.set(handle, value, { domains, allowHttp });
     if (header) await vault.injectHeader({ handle, header, hosts: domains, format, allowHttp });
     await host.addGrant({ scope: "fill", domains, tools: [FILL_TOOL] });
     return `added ${handle}`;

@@ -53,13 +53,24 @@ export function fillField(selector: string, value: string, host: string): string
   return "filled";
 }
 
+interface Settings {
+  domains: string[];
+  allowHttp: boolean;
+}
+
+/** Why this page cannot get the secret, or undefined when it can. */
+function pageBlocked(url: URL, secret: Settings): string | undefined {
+  if (url.protocol === "http:" && !secret.allowHttp) return "http";
+  return secret.domains.some((d) => matchesPattern(url.hostname, toPattern(d))) ? undefined : "domain";
+}
+
 export interface FillDeps {
   gate?: Gate;
   browser?: FillBrowser;
-  /** The secret's stored domains, or undefined when it does not exist. */
-  domains(handle: string): Promise<string[] | undefined>;
-  /** The value. Throws when the vault is locked. */
-  value(handle: string): Promise<string>;
+  /** The secret's stored settings, or undefined when it does not exist. */
+  settings(handle: string): Promise<Settings | undefined>;
+  /** The value with its settings, read in one step. Throws `locked` when the vault is locked. */
+  release(handle: string): Promise<(Settings & { value: string }) | undefined>;
   /** Throws when onEvent throws. */
   emit(type: "release" | "refuse", handle: string, host?: string, reason?: string): Promise<void>;
   validHandle(handle: unknown): boolean;
@@ -69,7 +80,8 @@ export async function runFill(deps: FillDeps, request: FillRequest): Promise<Fil
   const { handle, tabId, selector, token } = request ?? {};
   let host: string | undefined;
   const refuse = async (reason: string): Promise<FillResult> => {
-    await deps.emit("refuse", typeof handle === "string" ? handle : "", host, reason).catch(() => undefined);
+    // A handle that is not valid can be anything the planner wrote, so it is not echoed (F12).
+    await deps.emit("refuse", deps.validHandle(handle) ? handle : "", host, reason).catch(() => undefined);
     return { status: "refused", reason };
   };
   const goodInput = deps.validHandle(handle) && Number.isSafeInteger(tabId) && tabId >= 0 && typeof selector === "string" && selector.length > 0 && selector.length <= 1024;
@@ -88,10 +100,10 @@ export async function runFill(deps: FillDeps, request: FillRequest): Promise<Fil
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return refuse("domain");
   host = url.hostname;
-  const domains = await deps.domains(handle);
-  if (!domains) return refuse("not-found");
-  const where = host;
-  if (!domains.some((d) => matchesPattern(where, toPattern(d)))) return refuse("domain");
+  const settings = await deps.settings(handle);
+  if (!settings) return refuse("not-found");
+  const blocked = pageBlocked(url, settings);
+  if (blocked) return refuse(blocked);
 
   const action = { tool: FILL_TOOL, scope: "fill" as const, domain: host, args: { handle, selector } };
   const decision = token === undefined ? await deps.gate.check(action) : await deps.gate.redeem(token, action);
@@ -99,7 +111,18 @@ export async function runFill(deps: FillDeps, request: FillRequest): Promise<Fil
   if (decision.decision === "deny") return refuse(decision.reason);
   if (!frame.documentId) return refuse("frame-changed");
 
-  const value = await deps.value(handle);
+  // The secret can change while foxgate decides, so check the released one again (F11).
+  let secret: Awaited<ReturnType<FillDeps["release"]>>;
+  try {
+    secret = await deps.release(handle);
+  } catch (error) {
+    if ((error as { code?: string }).code === "locked") return refuse("locked");
+    throw error;
+  }
+  if (!secret) return refuse("not-found");
+  const again = pageBlocked(url, secret);
+  if (again) return refuse(again);
+  const value = secret.value;
   try {
     await deps.emit("release", handle, host);
   } catch {
