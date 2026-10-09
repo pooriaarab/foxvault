@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>A web page that calls the API host</title>
+<p>This page sends a request to the URL in ?target= and shows the answer.</p>
+<pre id="out"></pre>
+<script>
+  const target = new URLSearchParams(location.search).get("target");
+  fetch(target)
+    .then((r) => r.text())
+    .then((text) => {
+      document.getElementById("out").textContent = text;
+      document.body.dataset.done = "1";
+    });
+</script>

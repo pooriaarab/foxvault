@@ -91,3 +91,29 @@ each call. The E2E test checks F1, F4, and F6 in a real Firefox.
 | F8 | No gate is set, so fills run with no policy. | `refused` with reason `no-gate`. | `fill.test.ts` F8 |
 | F9 | The tab shows a page that is not `http:` or `https:` (for example `about:` or `file:`). | `refused` with reason `domain`. | `fill.test.ts` F9 |
 | F10 | The planner sends a bad tab ID or selector. | `refused` with reason `bad-input`. | `fill.test.ts` F10 |
+
+## Firefox key store (K)
+
+`pnpm e2e` checks these in a real Firefox, in the demo extension.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| K1 | IndexedDB in this Firefox cannot keep a `CryptoKey`, so the key is gone when the event page unloads. | A new vault object with a new `indexedDbKeyStore` unlocks the stored secrets. | E2E K1 |
+| K2 | The key that IndexedDB gives back is extractable. | It is a secret AES-GCM key with `extractable: false`. `exportKey` rejects. | E2E K2 |
+| K3 | `storage.local` holds the value as plain text, base64, or hex. | It holds only ciphertext. | E2E K3 |
+
+## Demo in Firefox (E)
+
+The test starts two local echo servers on two host names: `api.localhost` (A)
+and `other.localhost` (B). Firefox sends each `*.localhost` name to the
+loopback address. The echo servers log a SHA-256 hash of each
+`Authorization` header that arrives. They never return the header itself.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| E1 | The header does not reach the allowed host, or the extension page sees the value. | A logs the hash of `Bearer <value>`. The popup shows only that the header arrived. The popup HTML never holds the value. | E2E E1 |
+| E2 | A second local host gets the header. | B logs no `Authorization` header. | E2E E2 |
+| E3 | A redirect from A to B carries the header to B. | A gets the header. B, after the redirect, does not. | E2E E3 |
+| E4 | A web page on B sends a request to A and gets the key added. | A logs that request with no header. | E2E E4 |
+| E5 | `redact` misses the value in a sample prompt. | The value, its base64, and the value split across two lines all become the handle. | E2E E5 |
+| E6 | A header release is not recorded, or is recorded for the wrong host. | The release events name A only. | E2E E6 |
