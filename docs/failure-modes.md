@@ -72,3 +72,22 @@ listener. The E2E test checks H1, H3, and H4 again in a real Firefox.
 | H9 | The request already has a header with the same name, in any letter case, so two values go out. | foxvault replaces it. The request has one header with that name. | `headers.test.ts` H9 |
 | H10 | An injection is not recorded, or the event holds the value. | Each injection calls `onEvent` with kind `header`, the handle, and the host. If `onEvent` throws, the header is not sent. | `headers.test.ts` H10 |
 | H11 | The event page unloads, and the rules are gone after it wakes up. | Rules are stored with the secrets. A new vault object on the same storage sends the header. | `headers.test.ts` H11 |
+
+## Fill (F)
+
+`fill` writes a value into a form field with `scripting.executeScript` and a
+bundled function. The Node tests use a stand-in `browser` object that records
+each call. The E2E test checks F1, F4, and F6 in a real Firefox.
+
+| # | Failure mode | Wanted behaviour | Test |
+|---|---|---|---|
+| F1 | The tab is on a host that the secret does not allow. | `refused` with reason `domain`. The value never goes to the tab. | `fill.test.ts` F1, E2E |
+| F2 | foxgate denies the action. | `refused` with the foxgate reason. The value never goes to the tab. | `fill.test.ts` F2 |
+| F3 | foxgate asks a human, or the approved action is not the one that runs. | `ask` with the request ID and no fill. With a token, foxgate redeems it for the exact action, so another selector gets `action-changed`. | `fill.test.ts` F3 |
+| F4 | The field is in a cross-origin iframe, or the allowed page is inside a frame of another site. | foxvault fills only the top document of the tab, pinned by its `documentId`, and checks the host of that document. | `fill.test.ts` F4, E2E |
+| F5 | The tab goes to another page between the check and the fill. | The `documentId` pin makes the call fail: `refused` with reason `frame-changed`. The bundled function checks the host again: `host-changed`. | `fill.test.ts` F5 |
+| F6 | The selector finds nothing, or finds something that is not a text field. | `refused` with reason `not-found` or `not-a-field`. | `fill.test.ts` F6, E2E |
+| F7 | A fill is not recorded, or the event holds the value. | Each fill and each refusal calls `onEvent` with kind `fill`, the handle, and the host. If `onEvent` throws before a fill, nothing is filled. | `fill.test.ts` F7 |
+| F8 | No gate is set, so fills run with no policy. | `refused` with reason `no-gate`. | `fill.test.ts` F8 |
+| F9 | The tab shows a page that is not `http:` or `https:` (for example `about:` or `file:`). | `refused` with reason `domain`. | `fill.test.ts` F9 |
+| F10 | The planner sends a bad tab ID or selector. | `refused` with reason `bad-input`. | `fill.test.ts` F10 |
