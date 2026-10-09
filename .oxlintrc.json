@@ -4,5 +4,12 @@
     "correctness": "error",
     "suspicious": "warn"
   },
-  "ignorePatterns": ["dist", "dist-ext", "artifacts"]
+  "ignorePatterns": [
+    "dist",
+    "dist-ext",
+    "artifacts"
+  ],
+  "rules": {
+    "unicorn/no-array-fill-with-reference-type": "off"
+  }
 }
