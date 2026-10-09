@@ -6,6 +6,7 @@ import { MIN_ITERATIONS, fromBase64, newDeviceKey, passphraseKey, randomBytes, s
 import { VaultError } from "./errors.js";
 import { memoryKeyStore, type KeyStore } from "./keystore.js";
 import { redactText } from "./redact.js";
+import { applyRules, checkRule, fromExtension, type HeaderRule, type HeaderRuleInput, type RequestDetails } from "./headers.js";
 
 const RECORD = "foxvault";
 const CHECK = "foxvault:check";
@@ -32,9 +33,11 @@ export interface VaultOptions {
 /** One release of a value. It never holds the value. */
 export interface VaultEvent {
   type: "release";
-  kind: "use";
+  kind: "use" | "header";
   handle: string;
   at: number;
+  /** The request host, for kind `header`. */
+  host?: string;
 }
 
 /** What `list` shows. It never holds the value. */
@@ -54,6 +57,7 @@ interface VaultRecord {
   kdf?: { iterations: number; salt: string };
   check: Sealed;
   secrets: Record<string, StoredSecret>;
+  rules: Record<string, Omit<HeaderRule, "id">>;
 }
 interface Open {
   key: CryptoKey;
@@ -68,10 +72,14 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 function parseRecord(raw: unknown): VaultRecord | undefined {
   if (raw === undefined) return undefined;
   if (!isObject(raw) || raw.version !== 1) throw corrupt("unknown version");
-  const { mode, kdf, check, secrets } = raw;
+  const { mode, kdf, check, secrets, rules } = raw;
   if (mode !== "device" && mode !== "passphrase") throw corrupt("unknown mode");
   if (mode === "passphrase" && (!isObject(kdf) || typeof kdf.iterations !== "number" || typeof kdf.salt !== "string")) throw corrupt("no key settings");
-  if (!isSealed(check) || !isObject(secrets)) throw corrupt("missing fields");
+  if (!isSealed(check) || !isObject(secrets) || !isObject(rules)) throw corrupt("missing fields");
+  for (const r of Object.values(rules) as HeaderRule[]) {
+    const ok = isObject(r) && typeof r.handle === "string" && typeof r.header === "string" && typeof r.format === "string" && Array.isArray(r.hosts);
+    if (!ok) throw corrupt("a header rule has the wrong shape");
+  }
   for (const s of Object.values(secrets)) {
     const ok = isSealed(s) && Array.isArray((s as StoredSecret).domains) && typeof (s as StoredSecret).createdAt === "number";
     if (!ok) throw corrupt("a secret has the wrong shape");
@@ -187,6 +195,16 @@ export function createVault(options: VaultOptions = {}) {
     throw new VaultError("locked", "The vault is locked. Unlock it with the passphrase.");
   }
 
+  // Run onEvent before a header goes out. A failing hook stops the header (H10).
+  async function releaseHeader(rule: HeaderRule, host: string): Promise<boolean> {
+    try {
+      await options.onEvent?.({ type: "release", kind: "header", handle: rule.handle, host, at: clock() });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   return {
     /** `new` before initialize, then `locked` or `unlocked`. Throws `corrupt` for an unreadable record. */
     status: () => serial(async () => ((await read()) ? (current() ? "unlocked" : "locked") : "new") as "new" | "locked" | "unlocked"),
@@ -210,7 +228,7 @@ export function createVault(options: VaultOptions = {}) {
           key = await newDeviceKey();
           await keyStore.save(key);
         }
-        const record: VaultRecord = { version: 1, mode: kdf ? "passphrase" : "device", check: await seal(key, CHECK, CHECK), secrets: {} };
+        const record: VaultRecord = { version: 1, mode: kdf ? "passphrase" : "device", check: await seal(key, CHECK, CHECK), secrets: {}, rules: {} };
         if (kdf) record.kdf = kdf;
         await store.set(RECORD, record);
         opened(key, new Map());
@@ -251,6 +269,8 @@ export function createVault(options: VaultOptions = {}) {
         const record = await readInitialized();
         if (!record.secrets[name]) return false;
         delete record.secrets[name];
+        // Its header rules go too, so a new secret with this handle is not sent by them (H8).
+        for (const [id, rule] of Object.entries(record.rules)) if (rule.handle === `vault:${name}`) delete record.rules[id];
         await store.set(RECORD, record);
         open?.values.delete(name);
         return true;
@@ -272,6 +292,55 @@ export function createVault(options: VaultOptions = {}) {
         const state = await ensureOpen(await readInitialized());
         return redactText(text, [...state.values.values()].map(({ value, info }) => ({ handle: info.handle, value })));
       }),
+
+    /** Send the secret in a header to the given hosts, for requests that this extension makes. */
+    injectHeader: (input: HeaderRuleInput) =>
+      serial(async (): Promise<HeaderRule> => {
+        const name = handleName(input?.handle);
+        const record = await readInitialized();
+        const secret = record.secrets[name];
+        if (!secret) throw new VaultError("not-found", `vault:${name} does not exist.`);
+        const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+        const rule = { handle: `vault:${name}`, ...checkRule(input, secret.domains, options.publicSuffix) };
+        record.rules[id] = rule;
+        await store.set(RECORD, record);
+        return { id, ...rule, hosts: [...rule.hosts] };
+      }),
+
+    removeHeader: (id: string) =>
+      serial(async () => {
+        const record = await readInitialized();
+        if (typeof id !== "string" || !Object.hasOwn(record.rules, id)) return false;
+        delete record.rules[id];
+        await store.set(RECORD, record);
+        return true;
+      }),
+
+    headerRules: () =>
+      serial(async (): Promise<HeaderRule[]> =>
+        Object.entries((await readInitialized()).rules).map(([id, rule]) => ({ id, ...rule, hosts: [...rule.hosts] })),
+      ),
+
+    /**
+     * The body of a blocking webRequest.onBeforeSendHeaders listener.
+     * `extensionOrigin` is browser.runtime.getURL(""). It never throws: on any
+     * problem the request goes on with no secret.
+     */
+    async headersFor(details: RequestDetails, extensionOrigin: string) {
+      if (!fromExtension(details?.originUrl, extensionOrigin)) return undefined;
+      return serial(async () => {
+        const record = await read();
+        const rules = Object.entries(record?.rules ?? {}).map(([id, rule]) => ({ id, ...rule }));
+        if (!record || rules.length === 0) return undefined;
+        const state = record.mode === "device" || current() ? await ensureOpen(record) : undefined;
+        if (!state) return undefined;
+        const secret = (handle: string) => {
+          const found = state.values.get(handle.slice("vault:".length));
+          return found && { value: found.value, domains: found.info.domains };
+        };
+        return applyRules(details, rules, secret, releaseHeader);
+      }).catch(() => undefined);
+    },
 
     /** Give the value to host code. Never call this for the AI planner. */
     async use<T>(handle: string, fn: (value: string, info: SecretInfo) => T | Promise<T>): Promise<T> {

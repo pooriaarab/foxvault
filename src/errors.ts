@@ -13,6 +13,7 @@ export type VaultErrorCode =
   | "bad-handle"
   | "bad-value"
   | "bad-domain"
+  | "bad-rule"
   | "use-failed"
   | "hook-failed";
 
