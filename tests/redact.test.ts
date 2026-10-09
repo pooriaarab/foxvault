@@ -98,7 +98,7 @@ describe("redact", () => {
   it("R11: input that is not a string is refused", async () => {
     const vault = await vaultWith({ "vault:k": VALUE });
     for (const bad of [undefined, 42, { text: VALUE }]) {
-      const error = await vault.redact(bad as string).catch((e: unknown) => e);
+      const error = await vault.redact(bad as unknown as string).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(VaultError);
       expect((error as VaultError).code).toBe("bad-value");
     }
