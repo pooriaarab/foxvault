@@ -115,6 +115,18 @@ try {
   check("E8: the iframe-only field stays empty", "", await value(await frameOf(onA.page, "other.localhost"), "#frame-only"));
   await onA.page.close();
 
+  // F15 in Firefox: a documentId from before a navigation does not get the value.
+  const pinned = await fox.open(`${A}/form.html`);
+  const pinnedTab = await popup.evaluate(() => browser.tabs.query({ url: "http://api.localhost/*" }).then((t) => t.at(-1).id));
+  const frameNow = () => popup.evaluate((t) => browser.webNavigation.getFrame({ tabId: t, frameId: 0 }).then((f) => f.documentId), pinnedTab);
+  const before = await frameNow();
+  await pinned.goto(`${A}/form.html?next=1`, { waitUntil: "load" });
+  const pinFill = (documentId) => popup.evaluate((m) => browser.runtime.sendMessage({ type: "fill", ...m }), { handle: "vault:card", tabId: pinnedTab, selector: "#card", documentId });
+  check("F15: an old documentId is refused after a navigation", { status: "refused", reason: "page-changed" }, await pinFill(before));
+  check("F15: the new page stays empty", "", await value(pinned, "#card"));
+  check("F15: the current documentId fills", { status: "filled", host: "api.localhost" }, await pinFill(await frameNow()));
+  await pinned.close();
+
   const onB = await fill(`${B}/form.html?frame=${encodeURIComponent(`${A}/frame.html`)}`, "#card");
   check("E9: fill on B is refused", { status: "refused", reason: "domain" }, onB.result);
   check("E9: the card field on B stays empty", "", await value(onB.page, "#card"));
@@ -126,7 +138,7 @@ try {
   check("E6: header releases name only A", ["api.localhost"], hosts);
   check("E6: no event holds the value", false, forms.some((f) => JSON.stringify(state.events).includes(f)));
   const fills = state.events.filter((e) => e.kind === "fill").map((e) => `${e.type} ${e.host ?? ""} ${e.reason ?? ""}`.trim());
-  check("E7-E9: fill events name each release and refusal", ["refuse other.localhost domain", "refuse api.localhost not-found", "release api.localhost", "release api.localhost"], fills);
+  check("E7-E9: fill events name each release and refusal", ["refuse other.localhost domain", "release api.localhost", "refuse  page-changed", "refuse api.localhost not-found", "release api.localhost", "release api.localhost"], fills);
 
   const key = await popup.evaluate(() => browser.runtime.sendMessage({ type: "key-check" }));
   check("K1: a new vault object unlocks with the key from IndexedDB", true, key.reopened);
@@ -145,7 +157,7 @@ try {
   await a.close();
   await b.close();
 }
-record.passed = !record.error && record.checks.length >= 27 && record.checks.every((c) => c.ok);
+record.passed = !record.error && record.checks.length >= 30 && record.checks.every((c) => c.ok);
 const path = writeArtifact("artifacts", "e2e", record);
 for (const c of record.checks) console.log(`${c.ok ? "ok " : "BAD"} ${c.name}: ${JSON.stringify(c.actual)}`);
 console.log(`${record.passed ? "PASS" : "FAIL"}${record.error ? `: ${record.error}` : ""} | ${path}`);
