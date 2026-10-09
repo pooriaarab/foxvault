@@ -2,25 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>foxvault demo</title>
+    <title>foxvault</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>foxvault demo</h1>
+    <h1>foxvault</h1>
     <section>
       <h2>Add a secret</h2>
-      <label>Handle <input id="handle" value="vault:test-key" /></label>
+      <label>Handle <input id="handle" value="vault:api-key" /></label>
       <label>Value <input id="value" type="password" autocomplete="off" /></label>
       <label>Allowed hosts <input id="hosts" value="127.0.0.1" /></label>
       <label>Header <input id="header" value="Authorization" /></label>
       <label>Format <input id="format" value="Bearer {secret}" /></label>
-      <label class="row"><input id="allow-http" type="checkbox" checked /> Allow http (local test servers only)</label>
+      <label class="row"><input id="allow-http" type="checkbox" checked /> Allow http (servers on this computer only)</label>
       <button id="add">Add</button> <output id="add-result"></output>
       <ul id="secrets"></ul>
     </section>
     <section>
-      <h2>Call the test API</h2>
-      <p>Start it with <code>node e2e/echo.mjs</code>. It returns a hash of the header, not the header.</p>
+      <h2>Call a local echo server</h2>
+      <p>Start it from the foxvault repo with <code>node e2e/echo.mjs</code>. It returns a hash of the header, not the header.</p>
       <label>URL <input id="url" value="http://127.0.0.1:8787/echo" /></label>
       <button id="call">Call</button>
       <pre id="call-result"></pre>
@@ -28,7 +28,7 @@
     <section>
       <h2>Fill the active tab</h2>
       <p>foxgate checks the fill. The host must be in the secret's allowed hosts.</p>
-      <label>Handle <input id="fill-handle" value="vault:test-key" /></label>
+      <label>Handle <input id="fill-handle" value="vault:api-key" /></label>
       <label>Field selector <input id="selector" value="#card" /></label>
       <button id="fill">Fill</button> <output id="fill-result"></output>
     </section>
