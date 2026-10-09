@@ -22,6 +22,10 @@
   "support_url": {
     "en-US": "https://github.com/pooriaarab/foxvault/issues"
   },
+  "local_hosts": {
+    "http://127.0.0.1/*": "foxvault releases a secret only to servers on this computer in this version, for example a local model server or API on 127.0.0.1. The header and fill features need this access.",
+    "http://localhost/*": "The same local-only scope for servers that listen on the name localhost. foxvault sends no secret to any other host."
+  },
   "version": {
     "license": "MIT",
     "approval_notes": "The uploaded source.zip is the git tree of this release. To build: install Node 24 and pnpm 11 (corepack enable), run `pnpm install --frozen-lockfile`, then `pnpm build:ext`. The output is dist-ext/. esbuild bundles extension/*.js with src/ and the foxgate npm package; the other files are copied unmodified. To try it: run `node e2e/echo.mjs` from the source (an echo server on http://127.0.0.1:8787). In the popup, add a secret with allowed host 127.0.0.1, then press Call: the result shows a hash of the Authorization header. Open http://127.0.0.1:8787/form.html and press Fill to fill #card. No account is needed."
