@@ -159,3 +159,8 @@ row is a way that the listed build or the submission can go wrong.
 | AR9 | The AMO version lookup fails (401, 500, network) | `version-status` stops; it never guesses `absent` |
 | AE1 | The `http://*.localhost/*` host permission leaves the release build, so the E2E test cannot reach its two hosts (`api.localhost`, `other.localhost`). | `node scripts/build-ext.mjs --e2e` adds it to the manifest. `pnpm e2e` uses that build. |
 | AE2 | The release build keeps `*.localhost`, a host permission that only the test uses. | The release build has only `http://127.0.0.1/*` and `http://localhost/*`, each with a reason in `local_hosts`. `pnpm check:amo` stops on any other local host. |
+
+| ID | Failure | Wanted result |
+|---|---|---|
+| AR-U1 | A `local_hosts` reason for a host permission also clears a test content script on the same pattern | Each reason names its use (`host_permission`, `content_script`, `web_accessible_resource`, `externally_connectable`); a use without its own reason stops the check |
+| AR-U2 | `local_hosts` keeps a reason for a use that the release build does not have | The check stops and names the pattern and the use |
