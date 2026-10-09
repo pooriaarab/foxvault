@@ -1,6 +1,6 @@
 {
   "name": "foxvault",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Keep API keys and card numbers encrypted and out of the AI model's context.",
   "type": "module",
   "license": "MIT",
