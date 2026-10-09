@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "foxvault demo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Keep API keys and card numbers encrypted and out of the AI model's context.",
   "browser_specific_settings": {
     "gecko": {
