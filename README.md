@@ -140,7 +140,7 @@ the planner only handles.
 | `use(handle, fn)` | Calls `fn(value, info)` and returns its result. If `fn` throws, foxvault throws `use-failed` with no message from `fn`. |
 | `injectHeader({ handle, header, hosts, format?, allowHttp? })` | Stores a header rule. `format` holds `{secret}` one time, for example `Bearer {secret}`. `http:` needs `allowHttp: true`. |
 | `removeHeader(id)`, `headerRules()` | Delete a rule, or list them. |
-| `headersFor(details, extensionOrigin)` | The body of a blocking `onBeforeSendHeaders` listener. It never throws. |
+| `headersFor(details, extensionOrigin)` | The body of a blocking `onBeforeSendHeaders` listener. It never throws. While the vault is locked, it adds nothing and removes each rule header from a request that the rule does not allow. |
 | `fill({ handle, tabId, selector, token? })` | Fills an input or textarea in the top document of the tab. Returns `{ status: "filled", host }`, `{ status: "ask", requestId }`, or `{ status: "refused", reason }`. |
 
 Fill reasons: `bad-input`, `no-gate`, `no-browser`, `no-tab`, `domain`, `http`,
