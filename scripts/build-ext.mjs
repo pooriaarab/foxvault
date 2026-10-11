@@ -2,8 +2,10 @@
 // other files are copied. It stops when the manifest version is not the
 // package.json version, so AMO signs the version that npm publishes.
 //   node scripts/build-ext.mjs         the release build, which AMO signs
-//   node scripts/build-ext.mjs --e2e   the test build: adds the *.localhost
-//                                      host permission for the two E2E hosts
+//   node scripts/build-ext.mjs --e2e   the test build: adds the host
+//                                      permissions for the two E2E hosts
+//                                      (*.localhost, and the Cloudflare
+//                                      quick tunnel hosts on Ichabod)
 import { cpSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { build } from "esbuild";
@@ -29,9 +31,10 @@ await build({
 });
 // amo-metadata.json is the AMO listing, not a part of the add-on.
 for (const file of files.filter((f) => !f.endsWith(".js") && f !== "amo-metadata.json")) cpSync(`extension/${file}`, `dist-ext/${file}`, { recursive: true });
-// AE1, AE2: only the E2E test uses api.localhost and other.localhost.
+// AE1, AE2: only the E2E test uses api.localhost and other.localhost, or on
+// Ichabod their tunnel hosts, which are random per run.
 if (values.e2e) {
-  manifest.host_permissions.push("http://*.localhost/*");
+  manifest.host_permissions.push("http://*.localhost/*", "https://*.trycloudflare.com/*");
   writeFileSync("dist-ext/manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
 }
 console.log(`Built dist-ext/ (version ${pkg.version}${values.e2e ? ", e2e build" : ""}).`);
