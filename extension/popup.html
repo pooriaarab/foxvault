@@ -6,39 +6,47 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <h1>foxvault</h1>
-    <section>
+    <header>
+      <img class="mark" src="icons/icon-48.png" alt="" width="22" height="22" />
+      <h1>foxvault</h1>
+      <span class="chip">Demo</span>
+    </header>
+    <section class="card">
       <h2>Add a secret</h2>
       <label>Handle <input id="handle" value="vault:api-key" /></label>
       <label>Value <input id="value" type="password" autocomplete="off" /></label>
       <label>Allowed hosts <input id="hosts" value="127.0.0.1" /></label>
-      <label>Header <input id="header" value="Authorization" /></label>
-      <label>Format <input id="format" value="Bearer {secret}" /></label>
-      <label class="row"><input id="allow-http" type="checkbox" checked /> Allow http (servers on this computer only)</label>
-      <button id="add">Add</button> <output id="add-result"></output>
+      <div class="pair">
+        <label>Header <input id="header" value="Authorization" /></label>
+        <label>Format <input id="format" value="Bearer {secret}" /></label>
+      </div>
+      <label class="row switch"><input id="allow-http" type="checkbox" checked /> Allow http (servers on this computer only)</label>
+      <div class="actions"><button id="add" class="primary">Add</button> <output id="add-result"></output></div>
       <ul id="secrets"></ul>
     </section>
-    <section>
+    <section class="card">
       <h2>Call a local echo server</h2>
       <p>Start it from the foxvault repo with <code>node e2e/echo.mjs</code>. It returns a hash of the header, not the header.</p>
       <label>URL <input id="url" value="http://127.0.0.1:8787/echo" /></label>
-      <button id="call">Call</button>
+      <div class="actions"><button id="call">Call</button></div>
       <pre id="call-result"></pre>
     </section>
-    <section>
+    <section class="card">
       <h2>Fill the active tab</h2>
       <p>foxgate checks the fill. The host must be in the secret's allowed hosts.</p>
-      <label>Handle <input id="fill-handle" value="vault:api-key" /></label>
-      <label>Field selector <input id="selector" value="#card" /></label>
-      <button id="fill">Fill</button> <output id="fill-result"></output>
+      <div class="pair">
+        <label>Handle <input id="fill-handle" value="vault:api-key" /></label>
+        <label>Field selector <input id="selector" value="#card" /></label>
+      </div>
+      <div class="actions"><button id="fill">Fill</button> <output id="fill-result"></output></div>
     </section>
-    <section>
+    <section class="card">
       <h2>Redact playground</h2>
-      <textarea id="prompt" rows="3" placeholder="Paste a prompt that holds a secret"></textarea>
-      <button id="redact">Redact</button>
+      <label>Prompt <textarea id="prompt" rows="3" placeholder="Paste a prompt that holds a secret"></textarea></label>
+      <div class="actions"><button id="redact">Redact</button></div>
       <pre id="redacted"></pre>
     </section>
-    <section>
+    <section class="card">
       <h2>Releases</h2>
       <ol id="events"></ol>
     </section>
