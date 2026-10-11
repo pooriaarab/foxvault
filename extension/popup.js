@@ -2,7 +2,8 @@
 // add it, and then clears the field. After that it only sees handles.
 const send = (type, extra = {}) => browser.runtime.sendMessage({ type, ...extra });
 const $ = (id) => document.getElementById(id);
-const item = (text) => Object.assign(document.createElement("li"), { textContent: text });
+const el = (tag, className, textContent) => Object.assign(document.createElement(tag), { className, textContent });
+const seen = new Set();
 
 // Show an answer and count it in data-runs, so a repeated answer is still new.
 function answer(output, text) {
@@ -15,15 +16,23 @@ async function render() {
   const state = await send("state");
   $("secrets").replaceChildren(
     ...state.secrets.map((secret) => {
-      const li = item(`${secret.handle} for ${secret.domains.join(", ")} `);
+      const li = el("li", seen.has(secret.handle) ? "" : "new");
+      seen.add(secret.handle);
+      li.append(el("span", "handle", secret.handle), el("span", "hosts", ` for ${secret.domains.join(", ")} `));
       li.dataset.handle = secret.handle;
-      const remove = Object.assign(document.createElement("button"), { textContent: "Remove" });
+      const remove = el("button", "small danger", "Remove");
       remove.addEventListener("click", () => send("remove", { handle: secret.handle }).then(render));
       li.append(remove);
       return li;
     }),
   );
-  $("events").replaceChildren(...state.events.map((e) => item(`${e.type} ${e.kind} ${e.handle}${e.host ? ` to ${e.host}` : ""}`)));
+  $("events").replaceChildren(
+    ...state.events.map((e) => {
+      const li = el("li", e.type === "refuse" ? "bad" : "", `${e.kind} ${e.handle}${e.host ? ` to ${e.host}` : ""}`);
+      li.prepend(el("span", "kind", e.type));
+      return li;
+    }),
+  );
 }
 
 $("add").addEventListener("click", async () => {
