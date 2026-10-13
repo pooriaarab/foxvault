@@ -21,7 +21,7 @@ plain TypeScript. It runs in Node 24+ and in a Firefox extension.
 npm i foxvault
 ```
 
-Install the add-on from AMO: [addons.mozilla.org/firefox/addon/foxvault-agent-secrets](https://addons.mozilla.org/firefox/addon/foxvault-agent-secrets/)
+Install the add-on from AMO: [addons.mozilla.org/firefox/addon/foxmate-vault](https://addons.mozilla.org/firefox/addon/foxmate-vault/)
 (pending AMO review; the link works after approval).
 
 ## Example
