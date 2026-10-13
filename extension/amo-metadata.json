@@ -1,8 +1,8 @@
 {
   "default_locale": "en-US",
-  "slug": "foxvault-agent-secrets",
+  "slug": "foxmate-vault",
   "name": {
-    "en-US": "foxvault — keep secrets out of AI prompts"
+    "en-US": "Foxmate Vault — secrets out of AI prompts"
   },
   "summary": {
     "en-US": "Store an API key or a card number encrypted in your browser and use it by a handle such as vault:api-key. The value goes into a request header or a form field, and never into the text that an AI model reads."
