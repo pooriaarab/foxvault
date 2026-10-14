@@ -1,115 +1,120 @@
 # foxvault
 
-<p align="center">Keep API keys and card numbers encrypted and out of the AI model's context.</p>
+[![npm version](https://img.shields.io/npm/v/foxvault)](https://www.npmjs.com/package/foxvault)
+[![Downloads/month](https://img.shields.io/npm/dm/foxvault)](https://www.npmjs.com/package/foxvault)
+[![License: MIT](https://img.shields.io/npm/l/foxvault)](https://github.com/pooriaarab/foxvault/blob/main/LICENSE)
 
-<p align="center">
-  <a href="https://github.com/pooriaarab/foxvault/actions"><img src="https://github.com/pooriaarab/foxvault/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License MIT"/></a>
-</p>
+[Setup](#store-your-first-secret) · [API reference](#runtime-surfaces) · [Comparisons](#compare) · [npm](https://www.npmjs.com/package/foxvault)
 
-foxvault stores secrets such as API keys, card numbers, and passwords with
-AES-GCM encryption. Your app and the AI planner refer to each secret by a
-handle, for example `vault:openai-key`. The value goes out only on three
-paths that do not give it to the model: a header that Firefox adds to a
-request, a form field that foxvault fills, or a function in your own code.
-`redact` puts the handle back where a value shows up in text. The core is
-plain TypeScript. It runs in Node 24+ and in a Firefox extension.
+foxvault is an open-source encrypted secret vault for AI agent applications in Node.js and Firefox extensions.
+Applications refer to secrets by handles and redact known values before sending text to a model.
+It provides Firefox header injection, gated form filling, and a callback for trusted host code.
 
 ## Install
 
 ```bash
-npm i foxvault
+npm install foxvault
 ```
 
-Install the add-on from AMO: [addons.mozilla.org/firefox/addon/foxmate-vault](https://addons.mozilla.org/firefox/addon/foxmate-vault/)
-(pending AMO review; the link works after approval).
+Use Node.js 24 or later for the core example. Firefox extension paths use browser APIs; the demo requires Firefox 153 or later.
+TypeScript declarations are included. foxgate is the only direct runtime dependency.
 
-## Example
+## Store your first secret
+
+Save this example as `vault.mjs`. No API credentials or environment variables are required.
 
 ```js
 import { createVault } from "foxvault";
 
-const vault = createVault(); // device mode, with the key in memory
+const vault = createVault();
 await vault.initialize();
-await vault.set("vault:openai-key", "sk-live-0123456789abcdef", { domains: ["api.openai.com"] });
-
-// The text that goes to the model or to a log gets the handle.
-console.log(await vault.redact("Call the API with sk-live-0123456789abcdef"));
-// Call the API with vault:openai-key
-
-// Firefox adds the header on the way out. Here we call the listener body directly.
-await vault.injectHeader({ handle: "vault:openai-key", header: "Authorization", hosts: ["api.openai.com"], format: "Bearer {secret}" });
-const ext = "moz-extension://4b1d/";
-const sent = await vault.headersFor({ url: "https://api.openai.com/v1/models", originUrl: `${ext}popup.html`, requestHeaders: [] }, ext);
-console.log(sent.requestHeaders[0].name); // Authorization
-const other = await vault.headersFor({ url: "https://evil.example/", originUrl: `${ext}popup.html`, requestHeaders: [] }, ext);
-console.log(other); // undefined
+await vault.set("vault:demo-key", "example-secret-123", {
+  domains: ["api.example.com"],
+});
+console.log(await vault.redact("Use example-secret-123"));
+console.log((await vault.list())[0].handle);
+vault.lock();
 ```
 
-## Use cases
-
-| Who | What they build | How foxvault helps |
-|---|---|---|
-| An extension author | An extension that calls an AI API with the user's own key | The extension page calls `fetch` with no key. The blocking listener adds `Authorization` for the API host only. The page, the prompt, and the model never hold the key. |
-| A browser agent author (for example foxmate) | An agent that fills a payment form | The planner asks to fill `vault:card` into `#card-number`. foxgate decides, and foxvault fills the field. The card number never goes into the model context. |
-| A password manager author | Form filling that an AI assistant can trigger | `fill` works only on the secret's allowed hosts and only in the top document, so a cross-origin iframe or a look-alike host gets nothing. |
-| A developer of local tools | A local script or test runner that calls APIs with keys | In Node, `use(handle, fn)` gives the key to your function, and `redact` cleans each log line before it is written. |
-| An OAuth library author (for example foxlink) | Gmail and Calendar access from an extension | Keep the refresh token in the vault, and send the access token with `injectHeader` to the Google API hosts only. |
-| An audit log author (for example foxtrail) | A record of every time a secret left the vault | `onEvent` gets each release and each refused fill, with the handle and the host and never the value. If the hook throws, the value does not go out. |
+Run `node vault.mjs`. Success prints `Use vault:demo-key`, then `vault:demo-key`.
+The defaults keep ciphertexts and the device key in memory. Configure persistent stores when secrets must survive a restart.
+Send the redacted text to the model from your application code.
 
 ## How it works
 
-```mermaid
-flowchart TD
-  P[AI planner] -- "a handle, for example vault:card" --> X{Release path}
-  X -- injectHeader --> W[Blocking onBeforeSendHeaders]
-  W --> C1{"From this extension, to a host in the rule and the secret domains, over https?"}
-  C1 -- yes --> H[Header added to the request]
-  C1 -- no --> N1[No header. A carried header with the value is removed.]
-  X -- fill --> D{Top document host in secret domains?}
-  D -- no --> N2[refused: domain]
-  D -- yes --> G{foxgate decision, scope fill}
-  G -- deny --> N3[refused: reason]
-  G -- ask --> A[Human approves, then fill again with the token]
-  G -- allow --> F[Bundled function fills the field, pinned by documentId]
-  X -- use --> U[Your host code gets the value]
-  H & F & U --> E[onEvent: release, with no value]
+```text
+Secret -> AES-GCM ciphertext + allowed domains -> store
+               |
+          vault:handle
+               |
+       application chooses a release path
+        /               |                 \
+Firefox header    foxgate + top-frame fill    trusted callback
+               |
+       onEvent runs before release
 ```
 
-1. Device mode makes a non-extractable AES-GCM key. In Firefox,
-   `indexedDbKeyStore` keeps the `CryptoKey` object in IndexedDB.
-2. Passphrase mode derives the key with PBKDF2-SHA-256, 600,000 iterations,
-   and a random 16-byte salt. 600,000 is the OWASP minimum for
-   PBKDF2-SHA-256. foxvault refuses fewer iterations and passphrases under 12
-   characters. The key stays in memory only, until the vault locks.
-3. Each secret is one ciphertext. Its handle, its allowed domains, and its
-   `allowHttp` setting are bound to it as additional data, so a changed
-   domain list fails to decrypt.
-4. The vault locks `autoLockMs` after unlock. Every operation checks the
-   clock, so a suspended timer cannot keep it open. When the event page
-   unloads, the memory is gone, so the vault is locked.
-5. Every release path checks the host against the secret's domains. Header
-   rules can only name hosts inside those domains.
+AES-GCM means Advanced Encryption Standard in Galois/Counter Mode.
+Device mode uses a non-extractable key. Passphrase mode derives a key with PBKDF2-SHA-256 and at least 600,000 iterations.
+PBKDF2 means Password-Based Key Derivation Function 2. New passphrases must contain at least twelve characters.
+The ciphertext authenticates its handle, allowed domains, and HTTP setting.
 
-```mermaid
-sequenceDiagram
-  participant App as Your app
-  participant V as vault
-  participant M as AI model or log
-  App->>V: redact(prompt)
-  V->>V: find each value: plain, split, base64 at 3 offsets, hex, URL, JSON, HTML, NFC or NFD
-  V-->>App: prompt with vault:handle in place of each value
-  App->>M: redacted prompt
-  Note over V: Locked passphrase vault: redact throws "locked" and returns no text
-```
+There are two key modes, two key-store implementations, and three release paths.
+Header injection checks the request origin and allowed hosts. Form filling also requires a foxgate decision.
+`use()` gives the value to your callback; that callback controls any later network request.
 
-Every failure mode has a test: see [docs/failure-modes.md](docs/failure-modes.md).
+## Why it exists
 
-## API
+Agent planners often need to name credentials without receiving their values.
+foxvault supplies handles and explicit release operations for trusted application code.
+keytar reads passwords from operating-system keychains. conf persists application configuration with optional encryption.
 
-This package is a library only. It has no CLI and no MCP server. The value
-must stay in one process, behind the release paths. A CLI or an MCP server
-would print or send the value to a caller, which is what foxvault prevents.
+## Compare
+
+Checked on 2026-10-14 against [keytar's API](https://github.com/atom/node-keytar)
+and [conf's README](https://github.com/sindresorhus/conf).
+
+| Scope | foxvault | keytar | conf |
+|---|---|---|---|
+| Main surface | Secret handles and controlled release operations | Operating-system keychain access | Application configuration persistence |
+| Storage/key surface | Web Crypto, configured store, memory or IndexedDB keys | System keychain | Config file and optional supplied encryption key |
+| Value access | Callback, Firefox header, or gated fill | getPassword returns a password | get returns a stored value |
+
+## Coverage
+
+| Integration or surface | Status | Scope |
+|---|---|---|
+| Node.js / Web Crypto | ✓ | Core vault, redaction, trusted callback |
+| Mozilla Firefox | ✓ | Blocking header listener and top-document form filling |
+| IndexedDB | ✓ | Persistent device-key store |
+| foxgate | ✓ | Storage interface, domain patterns, fill decisions |
+| OpenAI / Google APIs | — | User-configured allowed hosts; no provider adapters |
+| foxlink / foxpay / foxtrail | — | Application wiring required; no built-in adapters |
+
+These four implemented surfaces are source-checked, with local tests for vault and release behavior.
+No provider credentials were checked. The package contains no provider registry or scaffold provider adapter.
+The two key stores are `memoryKeyStore` and `indexedDbKeyStore`.
+
+## Common use cases
+
+1. Firefox extension authors: attach API headers to requests from their own extension.
+2. Browser-agent builders: request foxgate permission before filling a secret into a top-document field.
+3. Node.js tool authors: keep credentials behind handles and release them to trusted callbacks.
+4. AI application authors: redact known credentials from text before passing it to a model.
+5. Audit-tool authors: record handle-only release events through `onEvent` and their own foxtrail wiring.
+
+## Features
+
+- **Encrypted storage:** choose device or passphrase mode with [createVault](#runtime-surfaces).
+- **Handle redaction:** replace known values and supported encodings with [redact](#vault-methods).
+- **Header injection:** restrict Firefox request headers through [header rules](#vault-methods).
+- **Gated form filling:** require domain checks and foxgate decisions through [fill](#vault-methods).
+- **Release hooks:** run `onEvent` before release using [vault options](#createvaultoptions).
+
+## Runtime surfaces
+
+The core runs in Node.js or a browser with Web Crypto.
+Firefox adapters need the corresponding extension APIs. There is no CLI or Model Context Protocol (MCP) server.
 
 ### `createVault(options)`
 
@@ -163,58 +168,11 @@ and every foxgate deny reason, for example `no-grant` or `action-changed`.
 | `MIN_ITERATIONS` | 600,000. |
 | `VaultError` | Has a `code`: `not-initialized`, `already-initialized`, `locked`, `bad-passphrase`, `weak-passphrase`, `weak-kdf`, `corrupt`, `key-lost`, `not-found`, `exists`, `bad-handle`, `bad-value`, `bad-domain`, `bad-rule`, `use-failed`, or `hook-failed`. No message holds a value. |
 
-### In a Firefox extension
-
-```js
-import { createFoxgate, storageAreaStore } from "foxgate";
-import { FILL_TOOL, attachHeaderInjection, createVault, indexedDbKeyStore } from "foxvault";
-
-const store = storageAreaStore(browser.storage.local);
-const { gate, host } = createFoxgate({ tools: { [FILL_TOOL]: "fill" }, store, publicSuffix: browser.publicSuffix });
-const vault = createVault({ store, keyStore: indexedDbKeyStore(), publicSuffix: browser.publicSuffix, gate, browser });
-attachHeaderInjection(vault, browser); // at the top level of the event page
-```
-
-The extension needs the permissions `storage`, `webRequest`,
-`webRequestBlocking`, `scripting`, and `webNavigation`, and host permissions
-for the API hosts and the form hosts.
-
-### Demo extension
-
-`extension/` is a demo for Firefox 153+. The popup adds a secret with its
-allowed hosts and a header rule, calls a local echo server, fills a field in
-the active tab, and redacts a prompt. The echo server returns a hash of the
-`Authorization` header, never the header.
-
-```bash
-pnpm install
-node e2e/echo.mjs  # the test API on http://127.0.0.1:8787/echo
-pnpm build:ext     # builds dist-ext/; load it from about:debugging
-pnpm e2e           # loads the demo in Firefox and checks every E2E failure mode
-```
-
-## Firefox APIs used
-
-| API | MDN | Why |
-|---|---|---|
-| Web Crypto `subtle.generateKey`, `encrypt`, `decrypt` (AES-GCM) | [generateKey](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/generateKey) | Encrypt each secret with a key that JavaScript cannot export. |
-| Web Crypto `subtle.importKey`, `deriveKey` (PBKDF2) | [deriveKey](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey) | Make the passphrase key. |
-| `crypto.getRandomValues` | [getRandomValues](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues) | IVs, salts, and rule IDs. |
-| IndexedDB | [IndexedDB API](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) | Keep the non-extractable device key. IndexedDB stores the `CryptoKey` object itself. |
-| `webRequest.onBeforeSendHeaders` with `blocking` (permissions `webRequest`, `webRequestBlocking`) | [onBeforeSendHeaders](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/webRequest/onBeforeSendHeaders) | Add the key to the header at send time. Firefox keeps blocking `webRequest` in Manifest V3. |
-| `runtime.getURL` | [runtime.getURL](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/getURL) | Tell requests from this extension apart from web page requests. |
-| `webNavigation.getFrame` | [getFrame](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/webNavigation/getFrame) | Read the URL and the `documentId` of the top document of a tab. |
-| `scripting.executeScript` with `documentIds` (Firefox 153+) | [executeScript](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/scripting/executeScript) | Run the bundled fill function in that exact document only. |
-| `storage.local` | [storage.local](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage/local) | Keep ciphertexts, header rules, and foxgate state. |
-| `publicSuffix.getDomain` (Firefox 153+, permission `publicSuffix`) | [publicSuffix](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/publicSuffix) | Refuse `*.` patterns on a public suffix. Demo only. |
-| `tabs.query` | [tabs.query](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/query) | Find the active tab for the popup fill button. Demo only. |
-| `runtime.sendMessage`, `runtime.onMessage` | [runtime](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime) | The popup talks to the background page. Demo only. |
-
-## Limits
+## Delivery/behavior limits
 
 - While the vault is unlocked, the values are in the memory of the
   background page. Code that runs in your extension, or a compromised
-  extension, can read them. foxvault keeps values out of the model context.
+  extension, can read them. Your application must send only handles and redacted text to the model.
   It is not a guard against your own extension.
 - `use` gives the value to your function. foxvault cannot stop that function
   from sending the value somewhere else.
@@ -244,30 +202,96 @@ pnpm e2e           # loads the demo in Firefox and checks every E2E failure mode
   the test uses two host names.
 - There is no import, export, or backup of the vault.
 
-## Part of the fox primitives
+## Integration guides
 
-```mermaid
-flowchart LR
-  foxkit[foxkit] -- template --> foxvault[foxvault]
-  foxgate[foxgate] --> foxvault
-  foxvault --> foxlink[foxlink]
-  foxvault --> foxpay[foxpay]
-  foxvault -. onEvent hook .-> foxtrail[foxtrail]
-  foxlink --> foxmate[foxmate]
-  foxpay --> foxmate
-  click foxkit "https://github.com/pooriaarab/foxkit"
-  click foxgate "https://github.com/pooriaarab/foxgate"
-  click foxvault "https://github.com/pooriaarab/foxvault"
-  click foxlink "https://github.com/pooriaarab/foxlink"
-  click foxpay "https://github.com/pooriaarab/foxpay"
-  click foxtrail "https://github.com/pooriaarab/foxtrail"
-  click foxmate "https://github.com/pooriaarab/foxmate"
+### Firefox extension setup
+
+```js
+import { createFoxgate, storageAreaStore } from "foxgate";
+import { FILL_TOOL, attachHeaderInjection, createVault, indexedDbKeyStore } from "foxvault";
+
+const store = storageAreaStore(browser.storage.local);
+const { gate, host } = createFoxgate({ tools: { [FILL_TOOL]: "fill" }, store, publicSuffix: browser.publicSuffix });
+const vault = createVault({ store, keyStore: indexedDbKeyStore(), publicSuffix: browser.publicSuffix, gate, browser });
+attachHeaderInjection(vault, browser); // at the top level of the event page
 ```
 
-foxvault depends on foxgate for fill decisions, storage, canonical JSON, and
-domain rules. foxtrail does not depend on foxvault. An app connects them with
-the `onEvent` hook.
+The extension needs the permissions `storage`, `webRequest`,
+`webRequestBlocking`, `scripting`, and `webNavigation`, and host permissions
+for the API hosts and the form hosts.
+
+### Demo extension
+
+`extension/` is a demo for Firefox 153+. The popup adds a secret with its
+allowed hosts and a header rule, calls a local echo server, fills a field in
+the active tab, and redacts a prompt. The echo server returns a hash of the
+`Authorization` header, never the header.
+
+```bash
+pnpm install
+node e2e/echo.mjs  # the test API on http://127.0.0.1:8787/echo
+pnpm build:ext     # builds dist-ext/; load it from about:debugging
+pnpm e2e           # loads the demo in Firefox and checks every E2E failure mode
+```
+
+## Status
+
+Version 0.1.3 is an early release. APIs and stored formats can change before 1.0.
+[Report issues on GitHub](https://github.com/pooriaarab/foxvault/issues).
+Public case studies are not yet published in this repository.
+
+## FAQ
+
+### What is foxvault?
+
+foxvault stores encrypted secrets behind handles for trusted application code.
+It provides redaction and explicit callback, Firefox header, and gated form release paths.
+
+### Which integrations are verified?
+
+foxvault implements Node.js/Web Crypto, Firefox adapters, IndexedDB keys, and foxgate integration.
+This rewrite checks source and local tests, without verifying OpenAI or Google API credentials.
+
+### Does foxvault provide a managed secret service?
+
+foxvault runs in your application or Firefox extension.
+It does not provide a managed vault endpoint or remote key service.
+
+### How is foxvault different from keytar?
+
+foxvault adds secret handles, redaction, domain rules, and gated Firefox release operations.
+keytar provides native operating-system keychain access and returns password strings to callers.
+
+### How is foxvault different from conf?
+
+foxvault focuses on secrets and explicit release paths.
+conf persists application configuration and offers optional file encryption with an application-supplied key.
+
+### Does foxvault automatically remove secrets from model context?
+
+foxvault redacts text only when your application calls `redact`.
+Send handles and redacted text to the model; do not expose the vault object or callback results to it.
+
+### Can a filled page read the secret?
+
+foxvault writes the value into a page field after its checks pass.
+The receiving page's scripts can read that field.
+
+### Does locking device mode require a passphrase next time?
+
+foxvault drops in-memory values when locked.
+Device mode can unlock automatically from its key store; passphrase mode requires the passphrase.
+
+### Does foxvault restrict where a use callback sends a secret?
+
+foxvault gives the value to trusted host code through `use`.
+Your callback must enforce any destination policy for its own requests.
+
+## Part of the fox primitives
+
+foxvault depends on foxgate for fill decisions, storage, canonical JSON, and domain rules.
+Applications can connect release events to foxtrail through `onEvent`; no foxtrail adapter is bundled.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/pooriaarab/foxvault/blob/main/LICENSE)

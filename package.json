@@ -1,7 +1,7 @@
 {
   "name": "foxvault",
   "version": "0.1.3",
-  "description": "Keep API keys and card numbers encrypted and out of the AI model's context.",
+  "description": "Encrypted secret handles for Node.js AI agents and Firefox extensions, with Web Crypto, credential redaction, header injection, and foxgate form approvals.",
   "type": "module",
   "license": "MIT",
   "author": "Pooria Arab",
@@ -45,5 +45,21 @@
   },
   "dependencies": {
     "foxgate": "^0.1.0"
-  }
+  },
+  "keywords": [
+    "secret-vault",
+    "ai-agent",
+    "firefox",
+    "mozilla",
+    "nodejs",
+    "web-crypto",
+    "aes-gcm",
+    "pbkdf2",
+    "indexeddb",
+    "credential-redaction",
+    "header-injection",
+    "form-filling",
+    "foxgate",
+    "typescript"
+  ]
 }
